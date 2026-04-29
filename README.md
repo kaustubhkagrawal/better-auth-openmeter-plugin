@@ -339,6 +339,48 @@ The provider maps `onSubscriptionComplete` to `subscription.active`,
 `onSubscriptionCreated` to `subscription.created`, update/cancel/delete
 callbacks to their equivalent generic billing events.
 
+### Polar Billing Provider
+
+The Polar provider bridges `@polar-sh/better-auth` webhook callbacks into
+OpenMeter billing events. Use this only when OpenMeter is the source of truth
+for usage and entitlements; Polar also has its own usage plugin.
+
+```ts
+import { polar, webhooks } from "@polar-sh/better-auth";
+import { openmeterBillingAdapter } from "better-auth-openmeter-plugin/adapters/billing";
+import { polarBillingProvider } from "better-auth-openmeter-plugin/adapters/polar";
+
+const polarProvider = polarBillingProvider({
+  billing: {
+    openmeterClient,
+    mapPlanToEntitlements(event) {
+      if (event.plan !== "pro") return [];
+      return [{ featureKey: "ai_tokens", type: "metered", amount: 100000 }];
+    },
+  },
+});
+
+betterAuth({
+  plugins: [
+    openmeterPlugin({ openmeterClient }),
+    openmeterBillingAdapter({ provider: polarProvider }),
+    polar({
+      client: polarClient,
+      createCustomerOnSignUp: true,
+      use: [
+        webhooks({
+          secret: process.env.POLAR_WEBHOOK_SECRET!,
+          ...polarProvider.callbacks,
+        }),
+      ],
+    }),
+  ],
+});
+```
+
+The provider reads `referenceId` from Polar metadata when present. Provide
+`resolveCustomerIdOrKey` if your Polar payloads use a different convention.
+
 ## React Query Helpers
 
 ```tsx

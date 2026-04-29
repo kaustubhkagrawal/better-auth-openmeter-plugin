@@ -10,6 +10,7 @@ export default defineConfig({
     "src/adapters/billing.ts",
     "src/adapters/razorpay.ts",
     "src/adapters/stripe.ts",
+    "src/adapters/polar.ts",
   ],
   format: ["esm"],
   dts: true,

@@ -45,6 +45,10 @@
     "./adapters/stripe": {
       "types": "./dist/adapters/stripe.d.ts",
       "import": "./dist/adapters/stripe.js"
+    },
+    "./adapters/polar": {
+      "types": "./dist/adapters/polar.d.ts",
+      "import": "./dist/adapters/polar.js"
     }
   },
   "scripts": {
