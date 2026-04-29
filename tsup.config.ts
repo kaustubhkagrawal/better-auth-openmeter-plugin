@@ -11,6 +11,7 @@ export default defineConfig({
     "src/adapters/razorpay.ts",
     "src/adapters/stripe.ts",
     "src/adapters/polar.ts",
+    "src/adapters/creem.ts",
   ],
   format: ["esm"],
   dts: true,

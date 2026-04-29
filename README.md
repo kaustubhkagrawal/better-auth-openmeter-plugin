@@ -381,6 +381,47 @@ betterAuth({
 The provider reads `referenceId` from Polar metadata when present. Provide
 `resolveCustomerIdOrKey` if your Polar payloads use a different convention.
 
+### Creem Billing Provider
+
+The Creem provider bridges the official `@creem_io/better-auth` webhook and
+access-control callbacks into OpenMeter billing events. Use the event-specific
+callbacks when you want a direct webhook mirror, or the high-level
+`onGrantAccess` / `onRevokeAccess` callbacks when Creem should decide whether a
+subscription currently grants access.
+
+```ts
+import { creem } from "@creem_io/better-auth";
+import { openmeterBillingAdapter } from "better-auth-openmeter-plugin/adapters/billing";
+import { creemBillingProvider } from "better-auth-openmeter-plugin/adapters/creem";
+
+const creemProvider = creemBillingProvider({
+  billing: {
+    openmeterClient,
+    mapPlanToEntitlements(event) {
+      if (event.plan !== "pro") return [];
+      return [{ featureKey: "ai_tokens", type: "metered", amount: 100000 }];
+    },
+  },
+});
+
+betterAuth({
+  plugins: [
+    openmeterPlugin({ openmeterClient }),
+    openmeterBillingAdapter({ provider: creemProvider }),
+    creem({
+      apiKey: process.env.CREEM_API_KEY!,
+      webhookSecret: process.env.CREEM_WEBHOOK_SECRET!,
+      persistSubscriptions: true,
+      ...creemProvider.callbacks,
+    }),
+  ],
+});
+```
+
+The provider reads `referenceId` from Creem metadata by default and maps
+subscription callbacks to generic events such as `subscription.active`,
+`invoice.paid`, `subscription.canceled`, and `subscription.expired`.
+
 ## React Query Helpers
 
 ```tsx

@@ -49,6 +49,10 @@
     "./adapters/polar": {
       "types": "./dist/adapters/polar.d.ts",
       "import": "./dist/adapters/polar.js"
+    },
+    "./adapters/creem": {
+      "types": "./dist/adapters/creem.d.ts",
+      "import": "./dist/adapters/creem.js"
     }
   },
   "scripts": {
