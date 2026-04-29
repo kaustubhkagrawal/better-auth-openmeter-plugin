@@ -4,23 +4,30 @@ import {
   APIError,
   createAuthEndpoint,
   createAuthMiddleware,
+  requireOrgRole,
   sessionMiddleware,
 } from "better-auth/api";
 import * as z from "zod";
 import { getSchema } from "./schema";
 import type {
   OpenMeterClient,
+  OpenMeterOrganization,
   OpenMeterOptions,
   OpenMeterUsageEvent,
   WithOpenMeterCustomerId,
 } from "./types";
 import {
   OPENMETER_ERROR_CODES,
+  addDefaultOrganizationSubject,
   addDefaultSubject,
   assertOpenMeterClient,
   authPathToEventType,
   createAPIError,
   normalizeUsageEvents,
+  resolveOrganizationCustomerKey,
+  resolveOrganizationCustomerMetadata,
+  resolveOrganizationCustomerName,
+  resolveOrganizationSubject,
   resolveCustomerKey,
   resolveCustomerMetadata,
   resolveCustomerName,
@@ -80,7 +87,27 @@ const syncCustomerBodySchema = z.object({
   metadata: metadataSchema.optional(),
 });
 
+const organizationBodySchema = z.object({
+  organizationId: z.string().min(1),
+});
+
+const syncOrganizationCustomerBodySchema = organizationBodySchema.extend({
+  metadata: metadataSchema.optional(),
+});
+
+const organizationEventBodySchema = ingestEventsBodySchema.and(
+  organizationBodySchema,
+);
+
+const organizationQuerySchema = z.object({
+  organizationId: z.string().min(1),
+});
+
 const entitlementQuerySchema = z.object({
+  featureKey: z.string().min(1),
+});
+
+const organizationEntitlementQuerySchema = organizationQuerySchema.extend({
   featureKey: z.string().min(1),
 });
 
@@ -115,8 +142,13 @@ async function reportOpenMeterError(
   error: unknown,
   ctx?: GenericEndpointContext,
   user?: User & WithOpenMeterCustomerId,
+  organization?: OpenMeterOrganization,
 ) {
-  await options.callbacks?.onError?.(error, { operation, user }, ctx);
+  await options.callbacks?.onError?.(
+    error,
+    { operation, user, organization },
+    ctx,
+  );
 
   if (options.failOnOpenMeterError) {
     throw error;
@@ -143,6 +175,38 @@ async function updateUserOpenMeterCustomerId(
     update: { openmeterCustomerId },
     where: [{ field: "id", value: userId }],
   });
+}
+
+async function updateOrganizationOpenMeterCustomerId(
+  ctx: GenericEndpointContext,
+  organizationId: string,
+  openmeterCustomerId: string,
+) {
+  await ctx.context.adapter.update({
+    model: "organization",
+    update: { openmeterCustomerId },
+    where: [{ field: "id", value: organizationId }],
+  });
+}
+
+async function getOrganizationById(
+  ctx: GenericEndpointContext,
+  organizationId: string,
+) {
+  const organization =
+    await ctx.context.adapter.findOne<OpenMeterOrganization>({
+      model: "organization",
+      where: [{ field: "id", value: organizationId }],
+    });
+
+  if (!organization) {
+    throw createAPIError(
+      "NOT_FOUND",
+      OPENMETER_ERROR_CODES.ORGANIZATION_NOT_FOUND,
+    );
+  }
+
+  return organization;
 }
 
 async function syncOpenMeterCustomerForUser(
@@ -207,6 +271,90 @@ async function syncOpenMeterCustomerForUser(
   return customer;
 }
 
+async function syncOpenMeterCustomerForOrganization(
+  client: OpenMeterClient,
+  options: OpenMeterOptions,
+  organization: OpenMeterOrganization,
+  user: User & WithOpenMeterCustomerId,
+  ctx: GenericEndpointContext,
+  extraMetadata?: Record<string, unknown> | undefined,
+) {
+  const key = await resolveOrganizationCustomerKey(
+    options,
+    organization,
+    user,
+    ctx,
+  );
+  const subject = await resolveOrganizationSubject(
+    options,
+    organization,
+    user,
+    ctx,
+  );
+  const metadata = {
+    ...(await resolveOrganizationCustomerMetadata(
+      options,
+      organization,
+      user,
+      ctx,
+    )),
+    ...extraMetadata,
+  };
+
+  let customer = await client.customers.get(key);
+
+  if (customer) {
+    customer = await client.customers.update(key, {
+      name: await resolveOrganizationCustomerName(
+        options,
+        organization,
+        user,
+        ctx,
+      ),
+      key,
+      usageAttribution: { subjectKeys: [subject] },
+      metadata,
+      ...(options.organization?.currency
+        ? { currency: options.organization.currency as never }
+        : {}),
+    } as never);
+  } else {
+    customer = await client.customers.create({
+      name: await resolveOrganizationCustomerName(
+        options,
+        organization,
+        user,
+        ctx,
+      ),
+      key,
+      usageAttribution: { subjectKeys: [subject] },
+      metadata,
+      ...(options.organization?.currency
+        ? { currency: options.organization.currency as never }
+        : {}),
+    } as never);
+  }
+
+  if (!customer?.id) {
+    throw createAPIError("BAD_REQUEST", OPENMETER_ERROR_CODES.CUSTOMER_NOT_FOUND);
+  }
+
+  if (organization.openmeterCustomerId !== customer.id) {
+    await updateOrganizationOpenMeterCustomerId(ctx, organization.id, customer.id);
+  }
+
+  await options.callbacks?.onCustomerSynced?.(
+    {
+      customer,
+      user,
+      organization,
+    },
+    ctx,
+  );
+
+  return customer;
+}
+
 async function ingestAuthEvent(
   client: OpenMeterClient,
   options: OpenMeterOptions,
@@ -246,12 +394,51 @@ function getSessionUser(ctx: GenericEndpointContext) {
   return user;
 }
 
+function getOrganizationIdFromBody(ctx: GenericEndpointContext) {
+  const organizationId = (ctx.body as { organizationId?: string }).organizationId;
+  if (!organizationId) {
+    throw createAPIError("BAD_REQUEST", OPENMETER_ERROR_CODES.ORGANIZATION_NOT_FOUND);
+  }
+  return organizationId;
+}
+
+function getOrganizationIdFromQuery(ctx: GenericEndpointContext) {
+  const organizationId = (ctx.query as { organizationId?: string })
+    .organizationId;
+  if (!organizationId) {
+    throw createAPIError("BAD_REQUEST", OPENMETER_ERROR_CODES.ORGANIZATION_NOT_FOUND);
+  }
+  return organizationId;
+}
+
 export const openmeter = <O extends OpenMeterOptions>(options: O) => {
   const client = getResolvedClient(options);
   assertOpenMeterClient(client);
   const eventUseSession =
     options.requireSession === false ? [] : [sessionMiddleware];
   const requireSession = [sessionMiddleware];
+  const organizationRoleConfigFromBody = {
+    orgIdParam: "organizationId",
+    orgIdSource: "body" as const,
+    ...(options.organization?.allowedRoles
+      ? { allowedRoles: options.organization.allowedRoles }
+      : {}),
+  };
+  const organizationRoleConfigFromQuery = {
+    orgIdParam: "organizationId",
+    orgIdSource: "query" as const,
+    ...(options.organization?.allowedRoles
+      ? { allowedRoles: options.organization.allowedRoles }
+      : {}),
+  };
+  const requireOrganizationFromBody = [
+    sessionMiddleware,
+    requireOrgRole(organizationRoleConfigFromBody),
+  ];
+  const requireOrganizationFromQuery = [
+    sessionMiddleware,
+    requireOrgRole(organizationRoleConfigFromQuery),
+  ];
 
   const resolvedOptions = {
     ...options,
@@ -260,6 +447,13 @@ export const openmeter = <O extends OpenMeterOptions>(options: O) => {
 
   return {
     id: "openmeter",
+    init(ctx) {
+      if (resolvedOptions.organization?.enabled && !ctx.hasPlugin("organization")) {
+        throw new Error(
+          "openmeter organization support requires the Better Auth organization plugin.",
+        );
+      }
+    },
     endpoints: {
       ingestOpenMeterEvent: createAuthEndpoint(
         "/openmeter/events/ingest",
@@ -398,6 +592,181 @@ export const openmeter = <O extends OpenMeterOptions>(options: O) => {
           return ctx.json((value ?? null) as never);
         },
       ),
+      ingestOpenMeterOrganizationEvent: createAuthEndpoint(
+        "/openmeter/organization/events/ingest",
+        {
+          method: "POST",
+          body: organizationEventBodySchema,
+          use: requireOrganizationFromBody,
+        },
+        async (ctx) => {
+          const user = getSessionUser(ctx);
+          const organization = await getOrganizationById(
+            ctx,
+            getOrganizationIdFromBody(ctx),
+          );
+          const events = normalizeUsageEvents(
+            ctx.body as OpenMeterUsageEvent | { events?: OpenMeterUsageEvent[] },
+          );
+          const enrichedEvents = await addDefaultOrganizationSubject(
+            events,
+            resolvedOptions,
+            organization,
+            user,
+            ctx,
+          );
+
+          await client.events.ingest(
+            enrichedEvents.length === 1
+              ? (enrichedEvents[0] as never)
+              : (enrichedEvents as never),
+          );
+          await resolvedOptions.callbacks?.onEventIngested?.(
+            { events: enrichedEvents, user, organization },
+            ctx,
+          );
+
+          return ctx.json({ ok: true });
+        },
+      ),
+      syncOpenMeterOrganizationCustomer: createAuthEndpoint(
+        "/openmeter/organization/customer/sync",
+        {
+          method: "POST",
+          body: syncOrganizationCustomerBodySchema,
+          use: requireOrganizationFromBody,
+        },
+        async (ctx) => {
+          const user = getSessionUser(ctx);
+          const organization = await getOrganizationById(
+            ctx,
+            getOrganizationIdFromBody(ctx),
+          );
+          const customer = await syncOpenMeterCustomerForOrganization(
+            client,
+            resolvedOptions,
+            organization,
+            user,
+            ctx,
+            ctx.body.metadata,
+          );
+
+          return ctx.json((customer ?? null) as never);
+        },
+      ),
+      getOpenMeterOrganizationCustomer: createAuthEndpoint(
+        "/openmeter/organization/customer",
+        {
+          method: "GET",
+          query: organizationQuerySchema,
+          use: requireOrganizationFromQuery,
+        },
+        async (ctx) => {
+          const user = getSessionUser(ctx);
+          const organization = await getOrganizationById(
+            ctx,
+            getOrganizationIdFromQuery(ctx),
+          );
+          const customerIdOrKey =
+            organization.openmeterCustomerId ??
+            (await resolveOrganizationCustomerKey(
+              resolvedOptions,
+              organization,
+              user,
+              ctx,
+            ));
+          const customer = await client.customers.get(customerIdOrKey);
+
+          return ctx.json((customer ?? null) as never);
+        },
+      ),
+      getOpenMeterOrganizationCustomerAccess: createAuthEndpoint(
+        "/openmeter/organization/customer/access",
+        {
+          method: "GET",
+          query: organizationQuerySchema,
+          use: requireOrganizationFromQuery,
+        },
+        async (ctx) => {
+          const user = getSessionUser(ctx);
+          const organization = await getOrganizationById(
+            ctx,
+            getOrganizationIdFromQuery(ctx),
+          );
+          const customerIdOrKey =
+            organization.openmeterCustomerId ??
+            (await resolveOrganizationCustomerKey(
+              resolvedOptions,
+              organization,
+              user,
+              ctx,
+            ));
+          const access = await client.customers.getAccess(customerIdOrKey);
+
+          return ctx.json((access ?? null) as never);
+        },
+      ),
+      listOpenMeterOrganizationEntitlements: createAuthEndpoint(
+        "/openmeter/organization/entitlements",
+        {
+          method: "GET",
+          query: organizationQuerySchema,
+          use: requireOrganizationFromQuery,
+        },
+        async (ctx) => {
+          const user = getSessionUser(ctx);
+          const organization = await getOrganizationById(
+            ctx,
+            getOrganizationIdFromQuery(ctx),
+          );
+          const customerIdOrKey =
+            organization.openmeterCustomerId ??
+            (await resolveOrganizationCustomerKey(
+              resolvedOptions,
+              organization,
+              user,
+              ctx,
+            ));
+          const entitlements =
+            await client.customers.entitlements.list(customerIdOrKey);
+
+          return ctx.json((entitlements ?? null) as never);
+        },
+      ),
+      getOpenMeterOrganizationEntitlementValue: createAuthEndpoint(
+        "/openmeter/organization/entitlement/value",
+        {
+          method: "GET",
+          query: organizationEntitlementQuerySchema,
+          use: requireOrganizationFromQuery,
+        },
+        async (ctx) => {
+          const user = getSessionUser(ctx);
+          const organization = await getOrganizationById(
+            ctx,
+            getOrganizationIdFromQuery(ctx),
+          );
+          const customerIdOrKey =
+            organization.openmeterCustomerId ??
+            (await resolveOrganizationCustomerKey(
+              resolvedOptions,
+              organization,
+              user,
+              ctx,
+            ));
+          const featureKey = ctx.query.featureKey;
+          if (!featureKey) {
+            throw createAPIError("BAD_REQUEST", OPENMETER_ERROR_CODES.INVALID_EVENT);
+          }
+
+          const value = await client.customers.entitlements.value(
+            customerIdOrKey,
+            featureKey,
+          );
+
+          return ctx.json((value ?? null) as never);
+        },
+      ),
     },
     hooks: {
       after: [
@@ -506,6 +875,81 @@ export const openmeter = <O extends OpenMeterOptions>(options: O) => {
             },
           },
         },
+        organization: resolvedOptions.organization?.enabled
+          ? {
+              create: {
+                async after(organization: OpenMeterOrganization, ctx: any) {
+                  if (!ctx || !resolvedOptions.organization?.enabled) return;
+                  if (
+                    !resolvedOptions.organization
+                      .createCustomerOnOrganizationCreate
+                  ) {
+                    return;
+                  }
+
+                  const user = ctx.context.session?.user as
+                    | (User & WithOpenMeterCustomerId)
+                    | undefined;
+                  if (!user) return;
+
+                  try {
+                    await syncOpenMeterCustomerForOrganization(
+                      client,
+                      resolvedOptions,
+                      organization,
+                      user,
+                      ctx,
+                    );
+                  } catch (error) {
+                    await reportOpenMeterError(
+                      resolvedOptions,
+                      "organization-create-hook",
+                      error,
+                      ctx,
+                      user,
+                      organization,
+                    );
+                  }
+                },
+              },
+              update: {
+                async after(organization: OpenMeterOrganization, ctx: any) {
+                  if (!ctx || !resolvedOptions.organization?.enabled) return;
+                  if (
+                    !resolvedOptions.organization
+                      .syncCustomerOnOrganizationUpdate ||
+                    !organization.openmeterCustomerId
+                  ) {
+                    return;
+                  }
+
+                  const user = ctx.context.session?.user as
+                    | (User & WithOpenMeterCustomerId)
+                    | undefined;
+                  if (!user) return;
+
+                  try {
+                    await syncOpenMeterCustomerForOrganization(
+                      client,
+                      resolvedOptions,
+                      organization,
+                      user,
+                      ctx,
+                    );
+                  } catch (error) {
+                    await reportOpenMeterError(
+                      resolvedOptions,
+                      "organization-update-hook",
+                      error,
+                      ctx,
+                      user,
+                      organization,
+                    );
+                  }
+                },
+              },
+            }
+          : undefined,
       },
     },
   } satisfies BetterAuthPlugin;

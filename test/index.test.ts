@@ -11,6 +11,12 @@ const user = {
   updatedAt: new Date(),
 };
 
+const organization = {
+  id: "org_123",
+  name: "Acme Inc",
+  slug: "acme",
+};
+
 function makeClient(overrides?: {
   customer?: Record<string, unknown> | null;
   customerId?: string;
@@ -72,6 +78,9 @@ function makeCtx(overrides?: {
                 ...user,
                 ...overrides?.sessionUser,
               },
+              session: {
+                activeOrganizationId: "org_123",
+              },
             },
       internalAdapter: {
         updateUser,
@@ -116,7 +125,27 @@ describe("openmeter plugin", () => {
       "getOpenMeterCustomerAccess",
       "listOpenMeterEntitlements",
       "getOpenMeterEntitlementValue",
+      "ingestOpenMeterOrganizationEvent",
+      "syncOpenMeterOrganizationCustomer",
+      "getOpenMeterOrganizationCustomer",
+      "getOpenMeterOrganizationCustomerAccess",
+      "listOpenMeterOrganizationEntitlements",
+      "getOpenMeterOrganizationEntitlementValue",
     ]);
+  });
+
+  it("requires the organization plugin when organization mode is enabled", () => {
+    const plugin = openmeter({
+      openmeterClient: makeClient() as any,
+      organization: { enabled: true },
+    });
+
+    expect(() =>
+      plugin.init?.({ hasPlugin: () => false } as any),
+    ).toThrow(
+      "openmeter organization support requires the Better Auth organization plugin.",
+    );
+    expect(() => plugin.init?.({ hasPlugin: () => true } as any)).not.toThrow();
   });
 
   it("allows public event ingestion only with an explicit subject", async () => {
@@ -245,6 +274,58 @@ describe("openmeter plugin", () => {
     );
     expect(plugin.endpoints.getOpenMeterEntitlementValue.path).toBe(
       "/openmeter/entitlement/value",
+    );
+    expect(plugin.endpoints.syncOpenMeterOrganizationCustomer.path).toBe(
+      "/openmeter/organization/customer/sync",
+    );
+    expect(plugin.endpoints.getOpenMeterOrganizationEntitlementValue.path).toBe(
+      "/openmeter/organization/entitlement/value",
+    );
+  });
+
+  it("runs organization create hooks for customer sync", async () => {
+    const client = makeClient({ customer: null, customerId: "cus_org" });
+    const onCustomerSynced = vi.fn();
+    const plugin = openmeter({
+      openmeterClient: client as any,
+      organization: {
+        enabled: true,
+        createCustomerOnOrganizationCreate: true,
+        currency: "USD",
+        metadata: { tier: "business" },
+      },
+      callbacks: { onCustomerSynced },
+    });
+    const ctx = makeCtx();
+    const orgHooks = plugin.options.databaseHooks.organization;
+    expect(orgHooks).toBeDefined();
+    if (!orgHooks) throw new Error("Expected organization database hooks");
+
+    await orgHooks.create.after(organization as any, ctx);
+
+    expect(client.customers.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Acme Inc",
+        key: "org_123",
+        usageAttribution: { subjectKeys: ["org_123"] },
+        currency: "USD",
+        metadata: expect.objectContaining({
+          betterAuthOrganizationId: "org_123",
+          betterAuthOrganizationSlug: "acme",
+          tier: "business",
+        }),
+      }),
+    );
+    expect(ctx.adapterUpdate).toHaveBeenCalledWith({
+      model: "organization",
+      update: { openmeterCustomerId: "cus_org" },
+      where: [{ field: "id", value: "org_123" }],
+    });
+    expect(onCustomerSynced).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organization: expect.objectContaining({ id: "org_123" }),
+      }),
+      ctx,
     );
   });
 

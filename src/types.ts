@@ -13,6 +13,14 @@ export type WithOpenMeterCustomerId = {
   openmeterCustomerId?: string | undefined;
 };
 
+export type OpenMeterOrganization = {
+  id: string;
+  name?: string | undefined;
+  slug?: string | undefined;
+  openmeterCustomerId?: string | undefined;
+  [key: string]: unknown;
+};
+
 export type OpenMeterCtxSession = {
   session: Session;
   user: User & WithOpenMeterCustomerId;
@@ -40,6 +48,12 @@ export type OpenMeterCustomer = Awaited<
 >;
 
 export type ResolveUserValue<T> = (params: {
+  user: User & WithOpenMeterCustomerId;
+  ctx?: GenericEndpointContext | undefined;
+}) => T | Promise<T>;
+
+export type ResolveOrganizationValue<T> = (params: {
+  organization: OpenMeterOrganization;
   user: User & WithOpenMeterCustomerId;
   ctx?: GenericEndpointContext | undefined;
 }) => T | Promise<T>;
@@ -111,6 +125,51 @@ export type OpenMeterOptions = {
      */
     currency?: string | undefined;
   } | undefined;
+  organization?:
+    | {
+        /**
+         * Enables organization-scoped OpenMeter customers and endpoints.
+         * Requires Better Auth's organization plugin.
+         */
+        enabled: true;
+        /**
+         * Optional org roles allowed to call organization-scoped endpoints.
+         * Omit to allow any organization member.
+         */
+        allowedRoles?: string[] | undefined;
+        /**
+         * Create and link an OpenMeter customer when an organization is created.
+         */
+        createCustomerOnOrganizationCreate?: boolean | undefined;
+        /**
+         * Update the OpenMeter customer profile when an organization changes.
+         */
+        syncCustomerOnOrganizationUpdate?: boolean | undefined;
+        /**
+         * Defaults to the Better Auth organization id.
+         */
+        resolveKey?: ResolveOrganizationValue<string> | undefined;
+        /**
+         * Defaults to the same value as `resolveKey`.
+         */
+        resolveSubject?: ResolveOrganizationValue<string> | undefined;
+        /**
+         * Defaults to organization.name, organization.slug, then organization.id.
+         */
+        resolveName?: ResolveOrganizationValue<string> | undefined;
+        /**
+         * Additional customer metadata merged with Better Auth organization metadata.
+         */
+        metadata?:
+          | JsonObject
+          | ResolveOrganizationValue<JsonObject | undefined>
+          | undefined;
+        /**
+         * Optional default currency passed to OpenMeter organization customers.
+         */
+        currency?: string | undefined;
+      }
+    | undefined;
   events?: {
     /**
      * Enrich every ingested event before it is sent to OpenMeter.
@@ -131,6 +190,7 @@ export type OpenMeterOptions = {
           params: {
             customer: OpenMeterCustomer;
             user: User & WithOpenMeterCustomerId;
+            organization?: OpenMeterOrganization | undefined;
           },
           ctx: GenericEndpointContext,
         ) => Promise<void> | void)
@@ -140,6 +200,7 @@ export type OpenMeterOptions = {
           params: {
             events: OpenMeterUsageEvent[];
             user?: (User & WithOpenMeterCustomerId) | undefined;
+            organization?: OpenMeterOrganization | undefined;
           },
           ctx: GenericEndpointContext,
         ) => Promise<void> | void)
@@ -150,6 +211,7 @@ export type OpenMeterOptions = {
           params: {
             operation: string;
             user?: (User & WithOpenMeterCustomerId) | undefined;
+            organization?: OpenMeterOrganization | undefined;
           },
           ctx?: GenericEndpointContext | undefined,
         ) => Promise<void> | void)

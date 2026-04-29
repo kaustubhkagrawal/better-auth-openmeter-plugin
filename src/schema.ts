@@ -13,8 +13,26 @@ export const user = {
   },
 } satisfies BetterAuthPluginDBSchema;
 
+export const organization = {
+  organization: {
+    fields: {
+      openmeterCustomerId: {
+        type: "string",
+        required: false,
+      },
+    },
+  },
+} satisfies BetterAuthPluginDBSchema;
+
+type GetSchemaResult<O extends OpenMeterOptions> = typeof user &
+  (O["organization"] extends { enabled: true } ? typeof organization : {});
+
 export const getSchema = <O extends OpenMeterOptions>(
   options: O,
-): typeof user => {
-  return mergeSchema(user, options.schema) as typeof user;
+): GetSchemaResult<O> => {
+  const baseSchema = options.organization?.enabled
+    ? { ...user, ...organization }
+    : user;
+
+  return mergeSchema(baseSchema, options.schema) as GetSchemaResult<O>;
 };

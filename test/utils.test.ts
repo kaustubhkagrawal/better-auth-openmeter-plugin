@@ -7,6 +7,10 @@ import {
   authPathToEventType,
   createAPIError,
   normalizeUsageEvents,
+  resolveOrganizationCustomerKey,
+  resolveOrganizationCustomerMetadata,
+  resolveOrganizationCustomerName,
+  resolveOrganizationSubject,
   resolveCustomerKey,
   resolveCustomerMetadata,
   resolveCustomerName,
@@ -20,6 +24,12 @@ const user = {
   emailVerified: true,
   createdAt: new Date(),
   updatedAt: new Date(),
+} as any;
+
+const organization = {
+  id: "org_123",
+  name: "Acme Inc",
+  slug: "acme",
 } as any;
 
 const ctx = {
@@ -77,6 +87,61 @@ describe("customer resolvers", () => {
         plan: "pro",
       },
     );
+  });
+});
+
+describe("organization customer resolvers", () => {
+  it("uses the organization id by default for customer key and subject", async () => {
+    const options: OpenMeterOptions = {
+      openmeterClient: {} as any,
+      organization: { enabled: true },
+    };
+
+    await expect(
+      resolveOrganizationCustomerKey(options, organization, user, ctx),
+    ).resolves.toBe("org_123");
+    await expect(
+      resolveOrganizationSubject(options, organization, user, ctx),
+    ).resolves.toBe("org_123");
+    await expect(
+      resolveOrganizationCustomerName(options, organization, user, ctx),
+    ).resolves.toBe("Acme Inc");
+    await expect(
+      resolveOrganizationCustomerMetadata(options, organization, user, ctx),
+    ).resolves.toMatchObject({
+      betterAuthOrganizationId: "org_123",
+      betterAuthOrganizationSlug: "acme",
+    });
+  });
+
+  it("supports custom organization resolvers", async () => {
+    const options: OpenMeterOptions = {
+      openmeterClient: {} as any,
+      organization: {
+        enabled: true,
+        resolveKey: ({ organization }) => `customer:${organization.id}`,
+        resolveSubject: ({ organization }) => `subject:${organization.id}`,
+        resolveName: ({ organization }) => organization.slug!,
+        metadata: { tier: "business" },
+      },
+    };
+
+    await expect(
+      resolveOrganizationCustomerKey(options, organization, user, ctx),
+    ).resolves.toBe("customer:org_123");
+    await expect(
+      resolveOrganizationSubject(options, organization, user, ctx),
+    ).resolves.toBe("subject:org_123");
+    await expect(
+      resolveOrganizationCustomerName(options, organization, user, ctx),
+    ).resolves.toBe("acme");
+    await expect(
+      resolveOrganizationCustomerMetadata(options, organization, user, ctx),
+    ).resolves.toMatchObject({
+      betterAuthOrganizationId: "org_123",
+      betterAuthOrganizationSlug: "acme",
+      tier: "business",
+    });
   });
 });
 

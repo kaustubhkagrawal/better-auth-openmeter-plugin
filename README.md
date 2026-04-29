@@ -58,14 +58,61 @@ export const authClient = createAuthClient({
 ## What It Adds
 
 - `openmeterCustomerId` on the Better Auth `user` schema
+- optional `openmeterCustomerId` on the Better Auth `organization` schema
 - optional OpenMeter customer creation after Better Auth user creation
 - optional OpenMeter customer sync after Better Auth user updates
+- optional OpenMeter customer creation/sync for Better Auth organizations
 - optional auth lifecycle event ingestion
-- authenticated endpoints for usage events, current customer, access, and entitlements
+- authenticated endpoints for user and organization usage events, customers,
+  access, and entitlements
 - optional React Query hooks from `better-auth-openmeter-plugin/react`
 
 Run your Better Auth migration/generation step after enabling the plugin so the
 `openmeterCustomerId` field exists in your database.
+
+## Organization Support
+
+Organization support is optional. Enable it only when you also use Better Auth's
+organization plugin.
+
+```ts
+import { betterAuth } from "better-auth";
+import { organization } from "better-auth/plugins";
+import { openmeterPlugin } from "better-auth-openmeter-plugin";
+
+export const auth = betterAuth({
+  plugins: [
+    organization(),
+    openmeterPlugin({
+      apiKey: process.env.OPENMETER_API_KEY!,
+      organization: {
+        enabled: true,
+        allowedRoles: ["owner", "admin"],
+        createCustomerOnOrganizationCreate: true,
+        syncCustomerOnOrganizationUpdate: true,
+        resolveKey: ({ organization }) => organization.id,
+        resolveSubject: ({ organization }) => organization.id,
+      },
+    }),
+  ],
+});
+```
+
+When `organization.enabled` is true, the plugin checks that the Better Auth
+organization plugin is installed. Organization endpoints require
+`organizationId` and use Better Auth's organization-role middleware.
+
+```ts
+await authClient.openmeter.organization.events.ingest({
+  organizationId: "org_123",
+  type: "ai-tokens",
+  data: { model: "gpt-4.1", tokens: 100 },
+});
+
+const access = await authClient.openmeter.organization.customer.access({
+  query: { organizationId: "org_123" },
+});
+```
 
 ## Usage Events
 

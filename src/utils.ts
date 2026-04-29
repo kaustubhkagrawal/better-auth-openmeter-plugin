@@ -4,6 +4,7 @@ import type {
   JsonObject,
   OpenMeterAuthEventType,
   OpenMeterClient,
+  OpenMeterOrganization,
   OpenMeterOptions,
   OpenMeterUsageEvent,
   WithOpenMeterCustomerId,
@@ -13,6 +14,7 @@ export const OPENMETER_ERROR_CODES = {
   CUSTOMER_NOT_FOUND: "OPENMETER_CUSTOMER_NOT_FOUND",
   INVALID_EVENT: "OPENMETER_INVALID_EVENT",
   MISSING_CLIENT_CONFIG: "OPENMETER_MISSING_CLIENT_CONFIG",
+  ORGANIZATION_NOT_FOUND: "OPENMETER_ORGANIZATION_NOT_FOUND",
 } as const;
 
 export function createAPIError(
@@ -89,6 +91,65 @@ export async function resolveCustomerMetadata(
   };
 }
 
+export async function resolveOrganizationCustomerKey(
+  options: OpenMeterOptions,
+  organization: OpenMeterOrganization,
+  user: User & WithOpenMeterCustomerId,
+  ctx?: GenericEndpointContext,
+) {
+  return options.organization?.resolveKey
+    ? await options.organization.resolveKey({ organization, user, ctx })
+    : organization.id;
+}
+
+export async function resolveOrganizationSubject(
+  options: OpenMeterOptions,
+  organization: OpenMeterOrganization,
+  user: User & WithOpenMeterCustomerId,
+  ctx?: GenericEndpointContext,
+) {
+  return options.organization?.resolveSubject
+    ? await options.organization.resolveSubject({ organization, user, ctx })
+    : await resolveOrganizationCustomerKey(options, organization, user, ctx);
+}
+
+export async function resolveOrganizationCustomerName(
+  options: OpenMeterOptions,
+  organization: OpenMeterOrganization,
+  user: User & WithOpenMeterCustomerId,
+  ctx?: GenericEndpointContext,
+) {
+  if (options.organization?.resolveName) {
+    return await options.organization.resolveName({ organization, user, ctx });
+  }
+
+  return organization.name || organization.slug || organization.id;
+}
+
+export async function resolveOrganizationCustomerMetadata(
+  options: OpenMeterOptions,
+  organization: OpenMeterOrganization,
+  user: User & WithOpenMeterCustomerId,
+  ctx?: GenericEndpointContext,
+) {
+  const base = {
+    betterAuthOrganizationId: organization.id,
+    betterAuthOrganizationSlug: organization.slug,
+  } satisfies JsonObject;
+  const metadata = options.organization?.metadata;
+
+  if (!metadata) return base;
+  const resolved =
+    typeof metadata === "function"
+      ? await metadata({ organization, user, ctx })
+      : metadata;
+
+  return {
+    ...base,
+    ...resolved,
+  };
+}
+
 export function normalizeUsageEvents(
   input:
     | OpenMeterUsageEvent
@@ -120,6 +181,35 @@ export async function addDefaultSubject(
   ctx: GenericEndpointContext,
 ) {
   const subject = await resolveSubject(options, user, ctx);
+
+  return Promise.all(
+    events.map(async (event) => {
+      const withDefaults = {
+        source: options.eventSource ?? "better-auth",
+        subject,
+        ...event,
+      };
+
+      return options.events?.enrich
+        ? await options.events.enrich(withDefaults, { user, ctx })
+        : withDefaults;
+    }),
+  );
+}
+
+export async function addDefaultOrganizationSubject(
+  events: OpenMeterUsageEvent[],
+  options: OpenMeterOptions,
+  organization: OpenMeterOrganization,
+  user: User & WithOpenMeterCustomerId,
+  ctx: GenericEndpointContext,
+) {
+  const subject = await resolveOrganizationSubject(
+    options,
+    organization,
+    user,
+    ctx,
+  );
 
   return Promise.all(
     events.map(async (event) => {
