@@ -37,6 +37,10 @@
     "./adapters/billing": {
       "types": "./dist/adapters/billing.d.ts",
       "import": "./dist/adapters/billing.js"
+    },
+    "./adapters/razorpay": {
+      "types": "./dist/adapters/razorpay.d.ts",
+      "import": "./dist/adapters/razorpay.js"
     }
   },
   "scripts": {

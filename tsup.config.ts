@@ -8,6 +8,7 @@ export default defineConfig({
     "src/adapters/index.ts",
     "src/adapters/api-key.ts",
     "src/adapters/billing.ts",
+    "src/adapters/razorpay.ts",
   ],
   format: ["esm"],
   dts: true,

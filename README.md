@@ -246,6 +246,59 @@ This is the intended path for Stripe, Razorpay, Polar, and custom billing
 providers. Polar already has usage-metering features, so only bridge it when
 OpenMeter is the source of truth for entitlements.
 
+### Razorpay Billing Provider
+
+The Razorpay provider is a callback bridge for
+`better-auth-razorpay-plugin`. It does not add a hard dependency on Razorpay;
+wire its callbacks into the Razorpay subscription callbacks you already pass.
+
+```ts
+import { betterAuth } from "better-auth";
+import { openmeterPlugin } from "better-auth-openmeter-plugin";
+import { openmeterBillingAdapter } from "better-auth-openmeter-plugin/adapters/billing";
+import { razorpayBillingProvider } from "better-auth-openmeter-plugin/adapters/razorpay";
+import { razorpayPlugin } from "better-auth-razorpay-plugin";
+
+const razorpayProvider = razorpayBillingProvider({
+  billing: {
+    openmeterClient,
+    mapPlanToEntitlements(event) {
+      if (event.plan !== "pro") return [];
+
+      return [
+        {
+          featureKey: "ai_tokens",
+          type: "metered",
+          amount: 100000,
+        },
+      ];
+    },
+  },
+  resolveCustomerIdOrKey: ({ subscription }) => subscription.referenceId,
+  resolveSubject: ({ subscription }) => subscription.referenceId,
+});
+
+export const auth = betterAuth({
+  plugins: [
+    openmeterPlugin({ openmeterClient }),
+    openmeterBillingAdapter({ provider: razorpayProvider }),
+    razorpayPlugin({
+      // ...
+      subscription: {
+        enabled: true,
+        plans: [{ name: "pro", planId: "plan_..." }],
+        ...razorpayProvider.callbacks,
+      },
+    }),
+  ],
+});
+```
+
+The provider maps Razorpay callbacks to generic billing events:
+`onSubscriptionActivated` becomes `subscription.active`, charged/renewed
+callbacks become `invoice.paid`, cancellation becomes `subscription.canceled`,
+and status changes become `subscription.updated`.
+
 ## React Query Helpers
 
 ```tsx
