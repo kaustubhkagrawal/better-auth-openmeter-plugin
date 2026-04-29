@@ -422,6 +422,58 @@ The provider reads `referenceId` from Creem metadata by default and maps
 subscription callbacks to generic events such as `subscription.active`,
 `invoice.paid`, `subscription.canceled`, and `subscription.expired`.
 
+### Dodo Payments Billing Provider
+
+The Dodo provider bridges `@dodopayments/better-auth` webhook callbacks into
+OpenMeter billing events. Dodo's webhooks plugin can invoke both `onPayload` and
+granular handlers for the same webhook, so the default spreadable `callbacks`
+object intentionally contains only granular handlers. Use `dodoProvider.onPayload`
+by itself if you prefer catch-all ingestion.
+
+```ts
+import { dodopayments, checkout, portal, webhooks } from "@dodopayments/better-auth";
+import DodoPayments from "dodopayments";
+import { openmeterBillingAdapter } from "better-auth-openmeter-plugin/adapters/billing";
+import { dodoBillingProvider } from "better-auth-openmeter-plugin/adapters/dodo";
+
+const dodoProvider = dodoBillingProvider({
+  billing: {
+    openmeterClient,
+    mapPlanToEntitlements(event) {
+      if (event.plan !== "pdt_pro") return [];
+      return [{ featureKey: "ai_tokens", type: "metered", amount: 100000 }];
+    },
+  },
+});
+
+betterAuth({
+  plugins: [
+    openmeterPlugin({ openmeterClient }),
+    openmeterBillingAdapter({ provider: dodoProvider }),
+    dodopayments({
+      client: new DodoPayments({ bearerToken: process.env.DODO_PAYMENTS_API_KEY! }),
+      createCustomerOnSignUp: true,
+      use: [
+        checkout({
+          products: [{ productId: "pdt_pro", slug: "pro" }],
+          successUrl: "/dashboard",
+          authenticatedUsersOnly: true,
+        }),
+        portal(),
+        webhooks({
+          webhookKey: process.env.DODO_PAYMENTS_WEBHOOK_SECRET!,
+          ...dodoProvider.callbacks,
+        }),
+      ],
+    }),
+  ],
+});
+```
+
+The provider reads `referenceId` from webhook metadata by default and maps Dodo
+payment/subscription callbacks to generic events such as `invoice.paid`,
+`subscription.active`, `subscription.updated`, and `subscription.canceled`.
+
 ## React Query Helpers
 
 ```tsx

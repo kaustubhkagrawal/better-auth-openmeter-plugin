@@ -12,6 +12,7 @@ export default defineConfig({
     "src/adapters/stripe.ts",
     "src/adapters/polar.ts",
     "src/adapters/creem.ts",
+    "src/adapters/dodo.ts",
   ],
   format: ["esm"],
   dts: true,

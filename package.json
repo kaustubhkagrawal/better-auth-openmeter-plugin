@@ -53,6 +53,10 @@
     "./adapters/creem": {
       "types": "./dist/adapters/creem.d.ts",
       "import": "./dist/adapters/creem.js"
+    },
+    "./adapters/dodo": {
+      "types": "./dist/adapters/dodo.d.ts",
+      "import": "./dist/adapters/dodo.js"
     }
   },
   "scripts": {
