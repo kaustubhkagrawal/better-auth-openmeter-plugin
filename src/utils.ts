@@ -4,6 +4,7 @@ import type {
   JsonObject,
   OpenMeterAuthEventType,
   OpenMeterClient,
+  OpenMeterCustomerProfile,
   OpenMeterOrganization,
   OpenMeterOptions,
   OpenMeterUsageEvent,
@@ -91,6 +92,65 @@ export async function resolveCustomerMetadata(
   };
 }
 
+function isJsonObject(value: unknown): value is JsonObject {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function stripUndefinedProfileValues(profile: OpenMeterCustomerProfile) {
+  return Object.fromEntries(
+    Object.entries(profile).filter(([, value]) => value !== undefined),
+  ) as OpenMeterCustomerProfile;
+}
+
+function mergeCustomerProfile(
+  defaults: OpenMeterCustomerProfile,
+  resolved: OpenMeterCustomerProfile | undefined,
+) {
+  if (!resolved) return defaults;
+
+  const defined = stripUndefinedProfileValues(resolved);
+  const profile = {
+    ...defaults,
+    ...defined,
+  };
+
+  if (isJsonObject(defaults.metadata) && isJsonObject(defined.metadata)) {
+    profile.metadata = {
+      ...defaults.metadata,
+      ...defined.metadata,
+    };
+  }
+
+  return profile;
+}
+
+export async function resolveCustomerProfile(
+  options: OpenMeterOptions,
+  user: User & WithOpenMeterCustomerId,
+  ctx?: GenericEndpointContext,
+  extraMetadata?: Record<string, unknown> | undefined,
+) {
+  const metadata = {
+    ...(await resolveCustomerMetadata(options, user, ctx)),
+    ...extraMetadata,
+  };
+  const defaults = {
+    name: await resolveCustomerName(options, user, ctx),
+    primaryEmail: user.email,
+    metadata,
+    ...(options.customer?.currency
+      ? { currency: options.customer.currency as never }
+      : {}),
+  } satisfies OpenMeterCustomerProfile;
+  const resolved = await options.customer?.resolveProfile?.({
+    user,
+    ctx,
+    defaults,
+  });
+
+  return mergeCustomerProfile(defaults, resolved);
+}
+
 export async function resolveOrganizationCustomerKey(
   options: OpenMeterOptions,
   organization: OpenMeterOrganization,
@@ -148,6 +208,39 @@ export async function resolveOrganizationCustomerMetadata(
     ...base,
     ...resolved,
   };
+}
+
+export async function resolveOrganizationCustomerProfile(
+  options: OpenMeterOptions,
+  organization: OpenMeterOrganization,
+  user: User & WithOpenMeterCustomerId,
+  ctx?: GenericEndpointContext,
+  extraMetadata?: Record<string, unknown> | undefined,
+) {
+  const metadata = {
+    ...(await resolveOrganizationCustomerMetadata(
+      options,
+      organization,
+      user,
+      ctx,
+    )),
+    ...extraMetadata,
+  };
+  const defaults = {
+    name: await resolveOrganizationCustomerName(options, organization, user, ctx),
+    metadata,
+    ...(options.organization?.currency
+      ? { currency: options.organization.currency as never }
+      : {}),
+  } satisfies OpenMeterCustomerProfile;
+  const resolved = await options.organization?.resolveProfile?.({
+    organization,
+    user,
+    ctx,
+    defaults,
+  });
+
+  return mergeCustomerProfile(defaults, resolved);
 }
 
 export function normalizeUsageEvents(

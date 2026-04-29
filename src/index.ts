@@ -25,12 +25,10 @@ import {
   createAPIError,
   normalizeUsageEvents,
   resolveOrganizationCustomerKey,
-  resolveOrganizationCustomerMetadata,
-  resolveOrganizationCustomerName,
+  resolveOrganizationCustomerProfile,
   resolveOrganizationSubject,
   resolveCustomerKey,
-  resolveCustomerMetadata,
-  resolveCustomerName,
+  resolveCustomerProfile,
   resolveSubject,
 } from "./utils";
 
@@ -40,6 +38,7 @@ export type {
   JsonObject,
   OpenMeterClient,
   OpenMeterCustomer,
+  OpenMeterCustomerProfile,
   OpenMeterOptions,
   OpenMeterUsageEvent,
   WithOpenMeterCustomerId,
@@ -218,35 +217,19 @@ async function syncOpenMeterCustomerForUser(
 ) {
   const key = await resolveCustomerKey(options, user, ctx);
   const subject = await resolveSubject(options, user, ctx);
-  const metadata = {
-    ...(await resolveCustomerMetadata(options, user, ctx)),
-    ...extraMetadata,
+  const profile = await resolveCustomerProfile(options, user, ctx, extraMetadata);
+  const customerPayload = {
+    ...profile,
+    key,
+    usageAttribution: { subjectKeys: [subject] },
   };
 
   let customer = await client.customers.get(key);
 
   if (customer) {
-    customer = await client.customers.update(key, {
-      name: await resolveCustomerName(options, user, ctx),
-      key,
-      primaryEmail: user.email,
-      usageAttribution: { subjectKeys: [subject] },
-      metadata,
-      ...(options.customer?.currency
-        ? { currency: options.customer.currency as never }
-        : {}),
-    } as never);
+    customer = await client.customers.update(key, customerPayload as never);
   } else {
-    customer = await client.customers.create({
-      name: await resolveCustomerName(options, user, ctx),
-      key,
-      primaryEmail: user.email,
-      usageAttribution: { subjectKeys: [subject] },
-      metadata,
-      ...(options.customer?.currency
-        ? { currency: options.customer.currency as never }
-        : {}),
-    } as never);
+    customer = await client.customers.create(customerPayload as never);
   }
 
   if (!customer?.id) {
@@ -291,48 +274,25 @@ async function syncOpenMeterCustomerForOrganization(
     user,
     ctx,
   );
-  const metadata = {
-    ...(await resolveOrganizationCustomerMetadata(
-      options,
-      organization,
-      user,
-      ctx,
-    )),
-    ...extraMetadata,
+  const profile = await resolveOrganizationCustomerProfile(
+    options,
+    organization,
+    user,
+    ctx,
+    extraMetadata,
+  );
+  const customerPayload = {
+    ...profile,
+    key,
+    usageAttribution: { subjectKeys: [subject] },
   };
 
   let customer = await client.customers.get(key);
 
   if (customer) {
-    customer = await client.customers.update(key, {
-      name: await resolveOrganizationCustomerName(
-        options,
-        organization,
-        user,
-        ctx,
-      ),
-      key,
-      usageAttribution: { subjectKeys: [subject] },
-      metadata,
-      ...(options.organization?.currency
-        ? { currency: options.organization.currency as never }
-        : {}),
-    } as never);
+    customer = await client.customers.update(key, customerPayload as never);
   } else {
-    customer = await client.customers.create({
-      name: await resolveOrganizationCustomerName(
-        options,
-        organization,
-        user,
-        ctx,
-      ),
-      key,
-      usageAttribution: { subjectKeys: [subject] },
-      metadata,
-      ...(options.organization?.currency
-        ? { currency: options.organization.currency as never }
-        : {}),
-    } as never);
+    customer = await client.customers.create(customerPayload as never);
   }
 
   if (!customer?.id) {

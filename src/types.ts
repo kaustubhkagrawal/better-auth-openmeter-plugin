@@ -47,6 +47,16 @@ export type OpenMeterCustomer = Awaited<
   ReturnType<OpenMeter["customers"]["create"]>
 >;
 
+export type OpenMeterCustomerCreate = Parameters<
+  OpenMeter["customers"]["create"]
+>[0];
+
+export type OpenMeterCustomerProfile = Partial<
+  Omit<OpenMeterCustomerCreate, "key" | "usageAttribution" | "metadata">
+> & {
+  metadata?: JsonObject | null | undefined;
+};
+
 export type ResolveUserValue<T> = (params: {
   user: User & WithOpenMeterCustomerId;
   ctx?: GenericEndpointContext | undefined;
@@ -57,6 +67,25 @@ export type ResolveOrganizationValue<T> = (params: {
   user: User & WithOpenMeterCustomerId;
   ctx?: GenericEndpointContext | undefined;
 }) => T | Promise<T>;
+
+export type ResolveUserProfile = (params: {
+  user: User & WithOpenMeterCustomerId;
+  ctx?: GenericEndpointContext | undefined;
+  defaults: OpenMeterCustomerProfile;
+}) =>
+  | OpenMeterCustomerProfile
+  | undefined
+  | Promise<OpenMeterCustomerProfile | undefined>;
+
+export type ResolveOrganizationProfile = (params: {
+  organization: OpenMeterOrganization;
+  user: User & WithOpenMeterCustomerId;
+  ctx?: GenericEndpointContext | undefined;
+  defaults: OpenMeterCustomerProfile;
+}) =>
+  | OpenMeterCustomerProfile
+  | undefined
+  | Promise<OpenMeterCustomerProfile | undefined>;
 
 export type OpenMeterOptions = {
   /**
@@ -121,6 +150,14 @@ export type OpenMeterOptions = {
       | ResolveUserValue<JsonObject | undefined>
       | undefined;
     /**
+     * Customize the OpenMeter customer profile payload. The returned fields are
+     * merged over the plugin defaults. Use `resolveKey` and `resolveSubject`
+     * for identity; profile cannot change customer key or usage attribution.
+     */
+    resolveProfile?:
+      | ResolveUserProfile
+      | undefined;
+    /**
      * Optional default currency passed to OpenMeter customers.
      */
     currency?: string | undefined;
@@ -163,6 +200,14 @@ export type OpenMeterOptions = {
         metadata?:
           | JsonObject
           | ResolveOrganizationValue<JsonObject | undefined>
+          | undefined;
+        /**
+         * Customize the OpenMeter organization customer profile payload. The
+         * returned fields are merged over the plugin defaults. Use `resolveKey`
+         * and `resolveSubject` for identity.
+         */
+        resolveProfile?:
+          | ResolveOrganizationProfile
           | undefined;
         /**
          * Optional default currency passed to OpenMeter organization customers.

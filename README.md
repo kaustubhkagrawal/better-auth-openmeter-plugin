@@ -25,6 +25,17 @@ export const auth = betterAuth({
       customer: {
         resolveKey: ({ user }) => user.id,
         resolveSubject: ({ user }) => user.id,
+        resolveProfile: ({ user, defaults }) => ({
+          ...defaults,
+          description: `Better Auth user ${user.id}`,
+          billingAddress: {
+            country: "US",
+          },
+          metadata: {
+            ...defaults.metadata,
+            source: "better-auth",
+          },
+        }),
       },
     }),
   ],
@@ -70,6 +81,29 @@ export const authClient = createAuthClient({
 Run your Better Auth migration/generation step after enabling the plugin so the
 `openmeterCustomerId` field exists in your database.
 
+## Customer Identity and Profile Sync
+
+OpenMeter generates the canonical customer `id`. The plugin stores that value in
+Better Auth as `openmeterCustomerId` after the first successful sync.
+
+Use `resolveKey` to choose the stable OpenMeter customer key. It defaults to the
+Better Auth user id, but you can return another deterministic value such as
+`customer:${user.id}`. Use `resolveSubject` to choose the OpenMeter usage
+subject. It defaults to the same value as `resolveKey`.
+
+The plugin syncs these user customer fields by default:
+
+- `name` from `user.name`, `user.email`, then `user.id`
+- `primaryEmail` from `user.email`
+- `usageAttribution.subjectKeys` from `resolveSubject`
+- `metadata.betterAuthUserId` and `metadata.betterAuthEmail`
+- optional `currency`
+
+Use `customer.resolveProfile` to customize OpenMeter customer profile fields
+such as `description`, `primaryEmail`, `billingAddress`, `currency`, and
+`metadata`. Profile fields are merged over the defaults; identity still comes
+from `resolveKey` and `resolveSubject`.
+
 ## Organization Support
 
 Organization support is optional. Enable it only when you also use Better Auth's
@@ -92,6 +126,14 @@ export const auth = betterAuth({
         syncCustomerOnOrganizationUpdate: true,
         resolveKey: ({ organization }) => organization.id,
         resolveSubject: ({ organization }) => organization.id,
+        resolveProfile: ({ organization, defaults }) => ({
+          ...defaults,
+          description: `Workspace ${organization.slug}`,
+          metadata: {
+            ...defaults.metadata,
+            workspaceSlug: organization.slug,
+          },
+        }),
       },
     }),
   ],
@@ -101,6 +143,10 @@ export const auth = betterAuth({
 When `organization.enabled` is true, the plugin checks that the Better Auth
 organization plugin is installed. Organization endpoints require
 `organizationId` and use Better Auth's organization-role middleware.
+Organization customer sync defaults to `name`, `usageAttribution.subjectKeys`,
+`metadata.betterAuthOrganizationId`, `metadata.betterAuthOrganizationSlug`, and
+optional `currency`; use `organization.resolveProfile` for the rest of the
+OpenMeter customer profile.
 
 ```ts
 await authClient.openmeter.organization.events.ingest({

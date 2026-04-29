@@ -10,10 +10,12 @@ import {
   resolveOrganizationCustomerKey,
   resolveOrganizationCustomerMetadata,
   resolveOrganizationCustomerName,
+  resolveOrganizationCustomerProfile,
   resolveOrganizationSubject,
   resolveCustomerKey,
   resolveCustomerMetadata,
   resolveCustomerName,
+  resolveCustomerProfile,
   resolveSubject,
 } from "../src/utils";
 
@@ -85,6 +87,47 @@ describe("customer resolvers", () => {
         betterAuthUserId: "user_123",
         betterAuthEmail: "test@example.com",
         plan: "pro",
+      },
+    );
+  });
+
+  it("merges custom customer profile fields over defaults", async () => {
+    const options: OpenMeterOptions = {
+      openmeterClient: {} as any,
+      customer: {
+        currency: "USD",
+        metadata: { plan: "pro" },
+        resolveProfile: ({ defaults }) => ({
+          description: "Primary workspace owner",
+          primaryEmail: "billing@example.com",
+          metadata: {
+            ...defaults.metadata,
+            region: "us",
+          },
+          billingAddress: {
+            country: "US",
+            postalCode: "94105",
+          },
+        }),
+      },
+    };
+
+    await expect(resolveCustomerProfile(options, user, ctx)).resolves.toMatchObject(
+      {
+        name: "Test User",
+        description: "Primary workspace owner",
+        primaryEmail: "billing@example.com",
+        currency: "USD",
+        metadata: {
+          betterAuthUserId: "user_123",
+          betterAuthEmail: "test@example.com",
+          plan: "pro",
+          region: "us",
+        },
+        billingAddress: {
+          country: "US",
+          postalCode: "94105",
+        },
       },
     );
   });
@@ -168,6 +211,38 @@ describe("normalizeUsageEvents", () => {
     expect(() => normalizeUsageEvents({ data: {} } as any)).toThrow(
       OPENMETER_ERROR_CODES.INVALID_EVENT,
     );
+  });
+
+  it("merges custom organization customer profile fields over defaults", async () => {
+    const options: OpenMeterOptions = {
+      openmeterClient: {} as any,
+      organization: {
+        enabled: true,
+        currency: "EUR",
+        metadata: { tier: "business" },
+        resolveProfile: ({ defaults, organization }) => ({
+          name: `${defaults.name} (${organization.slug})`,
+          description: "Organization customer",
+          metadata: {
+            profile: "configured",
+          },
+        }),
+      },
+    };
+
+    await expect(
+      resolveOrganizationCustomerProfile(options, organization, user, ctx),
+    ).resolves.toMatchObject({
+      name: "Acme Inc (acme)",
+      description: "Organization customer",
+      currency: "EUR",
+      metadata: {
+        betterAuthOrganizationId: "org_123",
+        betterAuthOrganizationSlug: "acme",
+        tier: "business",
+        profile: "configured",
+      },
+    });
   });
 });
 

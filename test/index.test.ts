@@ -233,6 +233,43 @@ describe("openmeter plugin", () => {
     );
   });
 
+  it("uses custom profile fields without letting profile override identity", async () => {
+    const client = makeClient({ customer: null, customerId: "cus_new" });
+    const plugin = openmeter({
+      openmeterClient: client as any,
+      createCustomerOnSignUp: true,
+      customer: {
+        resolveProfile: ({ defaults }) =>
+          ({
+            ...defaults,
+            key: "profile-key-should-not-win",
+            usageAttribution: { subjectKeys: ["profile-subject"] },
+            description: "Billing profile",
+            primaryEmail: "billing@example.com",
+            metadata: {
+              profileConfigured: true,
+            },
+          }) as any,
+      },
+    });
+
+    await plugin.options.databaseHooks.user.create.after(user as any, makeCtx());
+
+    expect(client.customers.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: "user_123",
+        usageAttribution: { subjectKeys: ["user_123"] },
+        description: "Billing profile",
+        primaryEmail: "billing@example.com",
+        metadata: expect.objectContaining({
+          betterAuthUserId: "user_123",
+          betterAuthEmail: "test@example.com",
+          profileConfigured: true,
+        }),
+      }),
+    );
+  });
+
   it("runs update database hooks for customer sync and skips duplicate id storage", async () => {
     const client = makeClient({ customerId: "cus_existing" });
     const plugin = openmeter({
