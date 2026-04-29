@@ -159,6 +159,93 @@ if (!error && data?.hasAccess) {
 }
 ```
 
+## Adapters
+
+The core plugin stays focused on OpenMeter customers, subjects, usage events,
+and entitlements. Optional adapters integrate other Better Auth plugins without
+coupling every provider into the core.
+
+### API Key Adapter
+
+Use the API key adapter with `@better-auth/api-key` to meter successful API key
+verification calls.
+
+```ts
+import { apiKey } from "@better-auth/api-key";
+import { betterAuth } from "better-auth";
+import { openmeterPlugin } from "better-auth-openmeter-plugin";
+import { openmeterApiKeyAdapter } from "better-auth-openmeter-plugin/adapters/api-key";
+
+export const auth = betterAuth({
+  plugins: [
+    apiKey(),
+    openmeterPlugin({
+      apiKey: process.env.OPENMETER_API_KEY!,
+    }),
+    openmeterApiKeyAdapter({
+      resolveSubject: ({ apiKey }) =>
+        typeof apiKey.metadata?.openmeterSubject === "string"
+          ? apiKey.metadata.openmeterSubject
+          : apiKey.referenceId,
+    }),
+  ],
+});
+```
+
+By default, the adapter listens to `/api-key/verify` and ingests
+`better-auth.api-key.verified` with API key id, name, owner reference, remaining
+count, rate-limit fields, permissions, and metadata.
+
+### Billing Adapter
+
+Payment gateways should integrate through one billing category instead of
+duplicating OpenMeter entitlement logic per provider.
+
+```ts
+import {
+  applyOpenMeterBillingEvent,
+  openmeterBillingAdapter,
+} from "better-auth-openmeter-plugin/adapters/billing";
+
+openmeterBillingAdapter({
+  mapPlanToEntitlements(event) {
+    if (event.plan !== "pro") return [];
+
+    return [
+      {
+        featureKey: "ai_tokens",
+        type: "metered",
+        amount: 100000,
+      },
+    ];
+  },
+});
+```
+
+Provider packages should translate gateway-specific callbacks or webhooks into
+generic billing events:
+
+```ts
+await applyOpenMeterBillingEvent(
+  {
+    type: "subscription.active",
+    provider: "stripe",
+    customerIdOrKey: "cus_123",
+    subject: "org_123",
+    referenceId: "org_123",
+    customerType: "organization",
+    plan: "pro",
+    subscriptionId: "sub_123",
+  },
+  ctx,
+  billingOptions,
+);
+```
+
+This is the intended path for Stripe, Razorpay, Polar, and custom billing
+providers. Polar already has usage-metering features, so only bridge it when
+OpenMeter is the source of truth for entitlements.
+
 ## React Query Helpers
 
 ```tsx

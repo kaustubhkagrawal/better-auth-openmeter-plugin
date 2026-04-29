@@ -25,6 +25,18 @@
     "./react": {
       "types": "./dist/react.d.ts",
       "import": "./dist/react.js"
+    },
+    "./adapters": {
+      "types": "./dist/adapters/index.d.ts",
+      "import": "./dist/adapters/index.js"
+    },
+    "./adapters/api-key": {
+      "types": "./dist/adapters/api-key.d.ts",
+      "import": "./dist/adapters/api-key.js"
+    },
+    "./adapters/billing": {
+      "types": "./dist/adapters/billing.d.ts",
+      "import": "./dist/adapters/billing.js"
     }
   },
   "scripts": {
