@@ -104,6 +104,32 @@ such as `description`, `primaryEmail`, `billingAddress`, `currency`, and
 `metadata`. Profile fields are merged over the defaults; identity still comes
 from `resolveKey` and `resolveSubject`.
 
+Common identity policies:
+
+```ts
+openmeterPlugin({
+  openmeterClient,
+  customer: {
+    // Default: one OpenMeter customer per Better Auth user.
+    resolveKey: ({ user }) => user.id,
+    resolveSubject: ({ user }) => user.id,
+  },
+});
+
+openmeterPlugin({
+  openmeterClient,
+  customer: {
+    // Namespaced key when OpenMeter also receives customers from other systems.
+    resolveKey: ({ user }) => `user:${user.id}`,
+    resolveSubject: ({ user }) => `user:${user.id}`,
+  },
+});
+```
+
+Use the OpenMeter generated `id` only as the stored `openmeterCustomerId`.
+Prefer a deterministic key for lookups and integration events so sync can be
+replayed safely.
+
 ## Organization Support
 
 Organization support is optional. Enable it only when you also use Better Auth's
@@ -147,6 +173,19 @@ Organization customer sync defaults to `name`, `usageAttribution.subjectKeys`,
 `metadata.betterAuthOrganizationId`, `metadata.betterAuthOrganizationSlug`, and
 optional `currency`; use `organization.resolveProfile` for the rest of the
 OpenMeter customer profile.
+
+For organization-first billing, keep the same organization key everywhere:
+
+```ts
+openmeterPlugin({
+  openmeterClient,
+  organization: {
+    enabled: true,
+    resolveKey: ({ organization }) => `org:${organization.id}`,
+    resolveSubject: ({ organization }) => `org:${organization.id}`,
+  },
+});
+```
 
 ```ts
 await authClient.openmeter.organization.events.ingest({
@@ -291,6 +330,12 @@ await applyOpenMeterBillingEvent(
 This is the intended path for Stripe, Razorpay, Polar, and custom billing
 providers. Polar already has usage-metering features, so only bridge it when
 OpenMeter is the source of truth for entitlements.
+
+Billing providers should resolve `customerIdOrKey` to the same value your core
+plugin returns from `customer.resolveKey` or `organization.resolveKey`. Gateway
+customer IDs such as Stripe `cus_...` or Razorpay customer IDs are usually best
+kept in event metadata unless you intentionally key OpenMeter customers by the
+gateway customer ID.
 
 ### Razorpay Billing Provider
 
@@ -575,6 +620,42 @@ If Autumn is your entitlement source of truth, use this adapter only for shared
 identity and audit events. If OpenMeter is the entitlement source of truth, call
 `handleBillingState` at the point where your application has confirmed the
 Autumn state to mirror.
+
+## Migration and Backfill
+
+After enabling the plugin, run your Better Auth migration/generation step so
+`openmeterCustomerId` exists on `user` and, when organization support is enabled,
+on `organization`.
+
+New users and organizations can be created automatically with
+`createCustomerOnSignUp` and `createCustomerOnOrganizationCreate`. Existing rows
+need a one-time backfill. Use your application's server-side auth context or
+database job to iterate users/organizations and call the sync endpoints with
+authenticated headers for the relevant user:
+
+```ts
+for (const user of users) {
+  await fetch(`${baseUrl}/api/auth/openmeter/customer/sync`, {
+    method: "POST",
+    headers: await authenticatedHeadersForUser(user.id),
+  });
+}
+
+for (const organization of organizations) {
+  await fetch(`${baseUrl}/api/auth/openmeter/organization/customer/sync`, {
+    method: "POST",
+    headers: {
+      ...(await authenticatedHeadersForUser(organization.ownerId)),
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ organizationId: organization.id }),
+  });
+}
+```
+
+Backfill is idempotent when `resolveKey` is deterministic: OpenMeter is looked
+up by key, then created or updated, and the generated OpenMeter `id` is stored
+back as `openmeterCustomerId`.
 
 ## React Query Helpers
 
