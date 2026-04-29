@@ -41,6 +41,10 @@
     "./adapters/razorpay": {
       "types": "./dist/adapters/razorpay.d.ts",
       "import": "./dist/adapters/razorpay.js"
+    },
+    "./adapters/stripe": {
+      "types": "./dist/adapters/stripe.d.ts",
+      "import": "./dist/adapters/stripe.js"
     }
   },
   "scripts": {

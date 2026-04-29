@@ -299,6 +299,46 @@ The provider maps Razorpay callbacks to generic billing events:
 callbacks become `invoice.paid`, cancellation becomes `subscription.canceled`,
 and status changes become `subscription.updated`.
 
+### Stripe Billing Provider
+
+The Stripe provider is a callback bridge for `@better-auth/stripe`.
+
+```ts
+import { stripe } from "@better-auth/stripe";
+import { openmeterBillingAdapter } from "better-auth-openmeter-plugin/adapters/billing";
+import { stripeBillingProvider } from "better-auth-openmeter-plugin/adapters/stripe";
+
+const stripeProvider = stripeBillingProvider({
+  billing: {
+    openmeterClient,
+    mapPlanToEntitlements(event) {
+      if (event.plan !== "pro") return [];
+      return [{ featureKey: "ai_tokens", type: "metered", amount: 100000 }];
+    },
+  },
+});
+
+betterAuth({
+  plugins: [
+    openmeterPlugin({ openmeterClient }),
+    openmeterBillingAdapter({ provider: stripeProvider }),
+    stripe({
+      stripeClient,
+      stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET!,
+      subscription: {
+        enabled: true,
+        plans: [{ name: "pro", priceId: "price_..." }],
+        ...stripeProvider.callbacks,
+      },
+    }),
+  ],
+});
+```
+
+The provider maps `onSubscriptionComplete` to `subscription.active`,
+`onSubscriptionCreated` to `subscription.created`, update/cancel/delete
+callbacks to their equivalent generic billing events.
+
 ## React Query Helpers
 
 ```tsx
