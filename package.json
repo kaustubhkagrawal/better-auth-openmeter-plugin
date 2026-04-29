@@ -57,6 +57,10 @@
     "./adapters/dodo": {
       "types": "./dist/adapters/dodo.d.ts",
       "import": "./dist/adapters/dodo.js"
+    },
+    "./adapters/autumn": {
+      "types": "./dist/adapters/autumn.d.ts",
+      "import": "./dist/adapters/autumn.js"
     }
   },
   "scripts": {

@@ -13,6 +13,7 @@ export default defineConfig({
     "src/adapters/polar.ts",
     "src/adapters/creem.ts",
     "src/adapters/dodo.ts",
+    "src/adapters/autumn.ts",
   ],
   format: ["esm"],
   dts: true,

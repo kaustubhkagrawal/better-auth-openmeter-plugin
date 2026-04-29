@@ -474,6 +474,62 @@ The provider reads `referenceId` from webhook metadata by default and maps Dodo
 payment/subscription callbacks to generic events such as `invoice.paid`,
 `subscription.active`, `subscription.updated`, and `subscription.canceled`.
 
+### Autumn Billing Provider
+
+Autumn's Better Auth plugin is not webhook-driven. It resolves a customer,
+then exposes billing, check, track, and portal endpoints through Better Auth.
+The OpenMeter adapter therefore focuses on the stable integration points:
+sharing the same user/organization customer identity and explicitly mirroring
+Autumn billing state into OpenMeter after your attach/update flow confirms the
+state you want OpenMeter to reflect.
+
+```ts
+import { autumn } from "autumn-js/better-auth";
+import { organization } from "better-auth/plugins";
+import { openmeterBillingAdapter } from "better-auth-openmeter-plugin/adapters/billing";
+import { autumnBillingProvider } from "better-auth-openmeter-plugin/adapters/autumn";
+
+const autumnProvider = autumnBillingProvider({
+  customerScope: "organization",
+  billing: {
+    openmeterClient,
+    mapPlanToEntitlements(event) {
+      if (event.plan !== "pro") return [];
+      return [{ featureKey: "ai_tokens", type: "metered", amount: 100000 }];
+    },
+  },
+});
+
+export const auth = betterAuth({
+  plugins: [
+    organization(),
+    openmeterPlugin({
+      openmeterClient,
+      organization: { enabled: true },
+    }),
+    openmeterBillingAdapter({ provider: autumnProvider }),
+    autumn({
+      customerScope: "organization",
+      identify: autumnProvider.identify,
+    }),
+  ],
+});
+
+// After an Autumn attach/update/check flow confirms the customer should have
+// access, mirror that state into OpenMeter:
+await autumnProvider.handleBillingState({
+  type: "subscription.active",
+  identity: { session, organization },
+  productId: "pro",
+  subscriptionId: "sub_...",
+});
+```
+
+If Autumn is your entitlement source of truth, use this adapter only for shared
+identity and audit events. If OpenMeter is the entitlement source of truth, call
+`handleBillingState` at the point where your application has confirmed the
+Autumn state to mirror.
+
 ## React Query Helpers
 
 ```tsx
