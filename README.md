@@ -251,6 +251,86 @@ if (!error && data?.hasAccess) {
 }
 ```
 
+## Catalog Setup
+
+Use a billing catalog when you want one app-owned definition for plans,
+features, prices, and provider mappings. The catalog can compile OpenMeter
+entitlements and payment-provider product/price setup data without making
+Stripe, Polar, Razorpay, Creem, Dodo, or Autumn the source of truth.
+
+```ts
+import {
+  compilePaymentCatalog,
+  createCatalogEntitlementMapper,
+  defineBillingCatalog,
+} from "better-auth-openmeter-plugin/catalog";
+import { openmeterBillingAdapter } from "better-auth-openmeter-plugin/adapters/billing";
+
+export const catalog = defineBillingCatalog({
+  meters: {
+    tokens: {
+      key: "tokens",
+      eventType: "ai.tokens",
+      aggregation: "sum",
+      valueProperty: "tokens",
+    },
+  },
+  features: {
+    aiTokens: {
+      key: "ai_tokens",
+      type: "metered",
+      meter: "tokens",
+    },
+    apiAccess: {
+      key: "api_access",
+      type: "boolean",
+    },
+  },
+  plans: {
+    pro: {
+      name: "Pro",
+      providerIds: {
+        stripe: "prod_...",
+      },
+      entitlements: {
+        aiTokens: { amount: 100000, reset: "month" },
+        apiAccess: true,
+      },
+      prices: {
+        monthly: {
+          amount: 2000,
+          currency: "USD",
+          interval: "month",
+          providerIds: {
+            stripe: "price_...",
+          },
+        },
+      },
+    },
+  },
+});
+
+openmeterBillingAdapter({
+  catalog,
+});
+
+const stripeSetup = compilePaymentCatalog(catalog, "stripe");
+```
+
+For mature applications that already use managed plans/subscriptions elsewhere,
+keep the same catalog for validation and event metadata, but disable OpenMeter
+entitlement creation from billing events:
+
+```ts
+openmeterBillingAdapter({
+  catalog,
+  entitlementMode: "none",
+  onBillingEvent(event) {
+    // Mirror or audit billing state without changing OpenMeter entitlements.
+  },
+});
+```
+
 ## Adapters
 
 The core plugin stays focused on OpenMeter customers, subjects, usage events,
@@ -300,19 +380,13 @@ import {
 } from "better-auth-openmeter-plugin/adapters/billing";
 
 openmeterBillingAdapter({
-  mapPlanToEntitlements(event) {
-    if (event.plan !== "pro") return [];
-
-    return [
-      {
-        featureKey: "ai_tokens",
-        type: "metered",
-        amount: 100000,
-      },
-    ];
-  },
+  catalog,
 });
 ```
+
+You can still provide `mapPlanToEntitlements` directly for custom logic. When a
+catalog is provided and `entitlementMode` is not `"none"`, the adapter maps
+`event.plan` to catalog entitlements automatically.
 
 Provider packages should translate gateway-specific callbacks or webhooks into
 generic billing events:

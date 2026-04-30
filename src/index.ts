@@ -36,10 +36,26 @@ export { OPENMETER_ERROR_CODES } from "./utils";
 export { getSchema, user as openmeterUserSchema } from "./schema";
 export {
   defineBillingCatalog,
+  compileCatalogFeatures,
+  compileCatalogPlans,
   compileOpenMeterEntitlements,
   compilePaymentCatalog,
   createCatalogEntitlementMapper,
+  assertValidBillingCatalog,
   validateBillingCatalog,
+} from "./catalog";
+export type {
+  BillingCatalog,
+  BillingCatalogEntitlement,
+  BillingCatalogFeature,
+  BillingCatalogMeter,
+  BillingCatalogPlan,
+  BillingCatalogPrice,
+  BillingCatalogProvider,
+  BillingCatalogValidationIssue,
+  CompiledPaymentCatalog,
+  CompiledPaymentPrice,
+  CompiledPaymentProduct,
 } from "./catalog";
 export type {
   JsonObject,
