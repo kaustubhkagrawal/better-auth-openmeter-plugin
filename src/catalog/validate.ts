@@ -37,6 +37,13 @@ function planReferenceIndex(catalog: BillingCatalog) {
   return planRefs;
 }
 
+function compatiblePlanRefs(
+  catalog: BillingCatalog,
+  compatiblePlans: string[] | undefined,
+) {
+  return compatiblePlans?.length ? compatiblePlans : Object.keys(catalog.plans);
+}
+
 function validateEntitlements(
   catalog: BillingCatalog,
   basePath: string,
@@ -186,9 +193,9 @@ function validateMatchingBillingCadence(
 
   for (const [addonId, addon] of Object.entries(catalog.addons ?? {})) {
     const addonIntervals = recurringIntervals(addon.prices);
-    if (!addonIntervals.length || !addon.compatiblePlans?.length) continue;
+    if (!addonIntervals.length) continue;
 
-    for (const planRef of addon.compatiblePlans) {
+    for (const planRef of compatiblePlanRefs(catalog, addon.compatiblePlans)) {
       const planId = planRefs.get(planRef);
       if (!planId) continue;
       const plan = catalog.plans[planId];
@@ -256,8 +263,28 @@ export function validateBillingCatalog(
     }
     planKeys.set(resolvedPlanKey, planId);
 
+    if (!Object.keys(plan.entitlements).length) {
+      issues.push(
+        issue(
+          `plans.${planId}.entitlements`,
+          "Plan must define at least one entitlement.",
+        ),
+      );
+    }
+
     validateEntitlements(catalog, `plans.${planId}.entitlements`, plan.entitlements, issues);
     validatePrices(plan.prices, `plans.${planId}.prices`, issues);
+
+    for (const [priceId, price] of Object.entries(plan.prices ?? {})) {
+      if (price.interval === "one_time") {
+        issues.push(
+          issue(
+            `plans.${planId}.prices.${priceId}.interval`,
+            'Plan prices must be recurring and cannot use interval "one_time".',
+          ),
+        );
+      }
+    }
   }
 
   for (const [addonId, addon] of Object.entries(catalog.addons ?? {})) {
@@ -273,6 +300,15 @@ export function validateBillingCatalog(
     }
     addonKeys.set(resolvedAddonKey, addonId);
 
+    if (!Object.keys(addon.entitlements).length) {
+      issues.push(
+        issue(
+          `addons.${addonId}.entitlements`,
+          "Add-on must define at least one entitlement.",
+        ),
+      );
+    }
+
     validateEntitlements(
       catalog,
       `addons.${addonId}.entitlements`,
@@ -280,12 +316,7 @@ export function validateBillingCatalog(
       issues,
     );
     validatePrices(addon.prices, `addons.${addonId}.prices`, issues);
-    validateCompatiblePlans(
-      addon.compatiblePlans,
-      planRefs,
-      `addons.${addonId}.compatiblePlans`,
-      issues,
-    );
+    validateCompatiblePlans(addon.compatiblePlans, planRefs, `addons.${addonId}.compatiblePlans`, issues);
 
     if (
       addon.quantity?.min !== undefined &&

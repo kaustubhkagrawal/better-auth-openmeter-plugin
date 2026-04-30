@@ -192,7 +192,8 @@ function normalizeCompatiblePlanIds(
   catalog: BillingCatalog,
   compatiblePlans: string[] | undefined,
 ) {
-  return (compatiblePlans ?? []).map((planRef) => {
+  const planRefs = compatiblePlans?.length ? compatiblePlans : Object.keys(catalog.plans);
+  return planRefs.map((planRef) => {
     const entry = findPlanEntry(catalog, planRef);
     return entry?.[0] ?? planRef;
   });
