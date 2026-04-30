@@ -1,5 +1,5 @@
 {
-  "name": "better-auth-openmeter-plugin",
+  "name": "@kaustubhkagrawal/better-auth-openmeter-plugin",
   "version": "0.2.0",
   "description": "OpenMeter usage metering and entitlement helpers for Better Auth.",
   "type": "module",
@@ -13,6 +13,9 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

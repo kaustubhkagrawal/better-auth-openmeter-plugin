@@ -1,18 +1,18 @@
-# better-auth-openmeter-plugin
+# @kaustubhkagrawal/better-auth-openmeter-plugin
 
 OpenMeter usage metering and entitlement helpers for Better Auth.
 
 ## Install
 
 ```sh
-npm install better-auth-openmeter-plugin @openmeter/sdk
+npm install @kaustubhkagrawal/better-auth-openmeter-plugin @openmeter/sdk
 ```
 
 ## Server Setup
 
 ```ts
 import { betterAuth } from "better-auth";
-import { openmeterPlugin } from "better-auth-openmeter-plugin";
+import { openmeterPlugin } from "@kaustubhkagrawal/better-auth-openmeter-plugin";
 
 export const auth = betterAuth({
   plugins: [
@@ -46,7 +46,7 @@ You can also pass a preconfigured SDK client:
 
 ```ts
 import { OpenMeter } from "@openmeter/sdk";
-import { openmeterPlugin } from "better-auth-openmeter-plugin";
+import { openmeterPlugin } from "@kaustubhkagrawal/better-auth-openmeter-plugin";
 
 openmeterPlugin({
   openmeterClient: new OpenMeter({
@@ -59,7 +59,7 @@ openmeterPlugin({
 
 ```ts
 import { createAuthClient } from "better-auth/client";
-import { openmeterClientPlugin } from "better-auth-openmeter-plugin/client";
+import { openmeterClientPlugin } from "@kaustubhkagrawal/better-auth-openmeter-plugin/client";
 
 export const authClient = createAuthClient({
   plugins: [openmeterClientPlugin()],
@@ -76,7 +76,7 @@ export const authClient = createAuthClient({
 - optional auth lifecycle event ingestion
 - authenticated endpoints for user and organization usage events, customers,
   access, and entitlements
-- optional React Query hooks from `better-auth-openmeter-plugin/react`
+- optional React Query hooks from `@kaustubhkagrawal/better-auth-openmeter-plugin/react`
 
 Run your Better Auth migration/generation step after enabling the plugin so the
 `openmeterCustomerId` field exists in your database.
@@ -138,7 +138,7 @@ organization plugin.
 ```ts
 import { betterAuth } from "better-auth";
 import { organization } from "better-auth/plugins";
-import { openmeterPlugin } from "better-auth-openmeter-plugin";
+import { openmeterPlugin } from "@kaustubhkagrawal/better-auth-openmeter-plugin";
 
 export const auth = betterAuth({
   plugins: [
@@ -258,8 +258,8 @@ verification calls.
 ```ts
 import { apiKey } from "@better-auth/api-key";
 import { betterAuth } from "better-auth";
-import { openmeterPlugin } from "better-auth-openmeter-plugin";
-import { openmeterApiKeyAdapter } from "better-auth-openmeter-plugin/adapters/api-key";
+import { openmeterPlugin } from "@kaustubhkagrawal/better-auth-openmeter-plugin";
+import { openmeterApiKeyAdapter } from "@kaustubhkagrawal/better-auth-openmeter-plugin/adapters/api-key";
 
 export const auth = betterAuth({
   plugins: [
@@ -290,7 +290,7 @@ duplicating OpenMeter entitlement logic per provider.
 import {
   applyOpenMeterBillingEvent,
   openmeterBillingAdapter,
-} from "better-auth-openmeter-plugin/adapters/billing";
+} from "@kaustubhkagrawal/better-auth-openmeter-plugin/adapters/billing";
 
 openmeterBillingAdapter({
   mapPlanToEntitlements(event) {
@@ -345,9 +345,9 @@ wire its callbacks into the Razorpay subscription callbacks you already pass.
 
 ```ts
 import { betterAuth } from "better-auth";
-import { openmeterPlugin } from "better-auth-openmeter-plugin";
-import { openmeterBillingAdapter } from "better-auth-openmeter-plugin/adapters/billing";
-import { razorpayBillingProvider } from "better-auth-openmeter-plugin/adapters/razorpay";
+import { openmeterPlugin } from "@kaustubhkagrawal/better-auth-openmeter-plugin";
+import { openmeterBillingAdapter } from "@kaustubhkagrawal/better-auth-openmeter-plugin/adapters/billing";
+import { razorpayBillingProvider } from "@kaustubhkagrawal/better-auth-openmeter-plugin/adapters/razorpay";
 import { razorpayPlugin } from "better-auth-razorpay-plugin";
 
 const razorpayProvider = razorpayBillingProvider({
@@ -396,8 +396,8 @@ The Stripe provider is a callback bridge for `@better-auth/stripe`.
 
 ```ts
 import { stripe } from "@better-auth/stripe";
-import { openmeterBillingAdapter } from "better-auth-openmeter-plugin/adapters/billing";
-import { stripeBillingProvider } from "better-auth-openmeter-plugin/adapters/stripe";
+import { openmeterBillingAdapter } from "@kaustubhkagrawal/better-auth-openmeter-plugin/adapters/billing";
+import { stripeBillingProvider } from "@kaustubhkagrawal/better-auth-openmeter-plugin/adapters/stripe";
 
 const stripeProvider = stripeBillingProvider({
   billing: {
@@ -438,8 +438,8 @@ for usage and entitlements; Polar also has its own usage plugin.
 
 ```ts
 import { polar, webhooks } from "@polar-sh/better-auth";
-import { openmeterBillingAdapter } from "better-auth-openmeter-plugin/adapters/billing";
-import { polarBillingProvider } from "better-auth-openmeter-plugin/adapters/polar";
+import { openmeterBillingAdapter } from "@kaustubhkagrawal/better-auth-openmeter-plugin/adapters/billing";
+import { polarBillingProvider } from "@kaustubhkagrawal/better-auth-openmeter-plugin/adapters/polar";
 
 const polarProvider = polarBillingProvider({
   billing: {
@@ -482,8 +482,8 @@ subscription currently grants access.
 
 ```ts
 import { creem } from "@creem_io/better-auth";
-import { openmeterBillingAdapter } from "better-auth-openmeter-plugin/adapters/billing";
-import { creemBillingProvider } from "better-auth-openmeter-plugin/adapters/creem";
+import { openmeterBillingAdapter } from "@kaustubhkagrawal/better-auth-openmeter-plugin/adapters/billing";
+import { creemBillingProvider } from "@kaustubhkagrawal/better-auth-openmeter-plugin/adapters/creem";
 
 const creemProvider = creemBillingProvider({
   billing: {
@@ -524,8 +524,8 @@ by itself if you prefer catch-all ingestion.
 ```ts
 import { dodopayments, checkout, portal, webhooks } from "@dodopayments/better-auth";
 import DodoPayments from "dodopayments";
-import { openmeterBillingAdapter } from "better-auth-openmeter-plugin/adapters/billing";
-import { dodoBillingProvider } from "better-auth-openmeter-plugin/adapters/dodo";
+import { openmeterBillingAdapter } from "@kaustubhkagrawal/better-auth-openmeter-plugin/adapters/billing";
+import { dodoBillingProvider } from "@kaustubhkagrawal/better-auth-openmeter-plugin/adapters/dodo";
 
 const dodoProvider = dodoBillingProvider({
   billing: {
@@ -577,8 +577,8 @@ state you want OpenMeter to reflect.
 ```ts
 import { autumn } from "autumn-js/better-auth";
 import { organization } from "better-auth/plugins";
-import { openmeterBillingAdapter } from "better-auth-openmeter-plugin/adapters/billing";
-import { autumnBillingProvider } from "better-auth-openmeter-plugin/adapters/autumn";
+import { openmeterBillingAdapter } from "@kaustubhkagrawal/better-auth-openmeter-plugin/adapters/billing";
+import { autumnBillingProvider } from "@kaustubhkagrawal/better-auth-openmeter-plugin/adapters/autumn";
 
 const autumnProvider = autumnBillingProvider({
   customerScope: "organization",
@@ -663,7 +663,7 @@ back as `openmeterCustomerId`.
 import {
   useIngestOpenMeterEvent,
   useOpenMeterEntitlementValue,
-} from "better-auth-openmeter-plugin/react";
+} from "@kaustubhkagrawal/better-auth-openmeter-plugin/react";
 
 export function TokenButton({ authClient }: { authClient: any }) {
   const entitlement = useOpenMeterEntitlementValue(authClient, "gpt_4_tokens");
