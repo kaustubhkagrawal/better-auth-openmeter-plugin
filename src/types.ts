@@ -47,6 +47,10 @@ export type OpenMeterCustomer = Awaited<
   ReturnType<OpenMeter["customers"]["create"]>
 >;
 
+export type OpenMeterEntitlementGrant = Awaited<
+  ReturnType<OpenMeter["customers"]["entitlements"]["createGrant"]>
+>;
+
 export type OpenMeterCustomerCreate = Parameters<
   OpenMeter["customers"]["create"]
 >[0];
