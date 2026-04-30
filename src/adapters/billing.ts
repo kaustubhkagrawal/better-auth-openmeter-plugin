@@ -1,4 +1,9 @@
 import type { BetterAuthPlugin, GenericEndpointContext } from "better-auth";
+import {
+  createCatalogEntitlementMapper,
+  type BillingCatalog,
+  type CatalogEntitlementMapperOptions,
+} from "../catalog";
 import type { JsonObject, OpenMeterUsageEvent } from "../types";
 import {
   assertOpenMeterPlugin,
@@ -58,6 +63,14 @@ export type OpenMeterBillingProvider = {
 export type OpenMeterBillingAdapterOptions = OpenMeterAdapterOptions & {
   provider?: OpenMeterBillingProvider | undefined;
   requireOpenMeterPlugin?: boolean | undefined;
+  catalog?: BillingCatalog | undefined;
+  catalogMapperOptions?: CatalogEntitlementMapperOptions | undefined;
+  /**
+   * Defaults to "openmeter". Set to "none" when another catalog/subscription
+   * system is the entitlement source of truth and billing events should only be
+   * mirrored or audited.
+   */
+  entitlementMode?: "openmeter" | "none" | undefined;
   /**
    * Defaults to true. When true, billing events are also ingested as usage
    * events for auditability.
@@ -113,7 +126,16 @@ export async function applyOpenMeterBillingEvent(
     await client.events.ingest(usageEvent as never);
   }
 
-  const entitlements = await options.mapPlanToEntitlements?.(event, ctx);
+  const mapPlanToEntitlements =
+    options.mapPlanToEntitlements ??
+    (options.catalog && options.entitlementMode !== "none"
+      ? createCatalogEntitlementMapper(
+          options.catalog,
+          options.catalogMapperOptions,
+        )
+      : undefined);
+
+  const entitlements = await mapPlanToEntitlements?.(event, ctx);
   if (entitlements?.length) {
     for (const entitlement of entitlements) {
       await client.customers.entitlements.create(
@@ -147,4 +169,3 @@ export const openmeterBillingAdapter = (
 };
 
 export const billingAdapter = openmeterBillingAdapter;
-

@@ -4,6 +4,7 @@ import {
   billingAdapter,
   openmeterBillingAdapter,
 } from "../src/adapters/billing";
+import { defineBillingCatalog } from "../src/catalog";
 
 function makeClient() {
   return {
@@ -139,5 +140,93 @@ describe("applyOpenMeterBillingEvent", () => {
 
     expect(client.events.ingest).not.toHaveBeenCalled();
   });
-});
 
+  it("can create entitlements from a billing catalog", async () => {
+    const client = makeClient();
+    const catalog = defineBillingCatalog({
+      features: {
+        tokens: {
+          key: "ai_tokens",
+          type: "metered",
+        },
+        apiAccess: {
+          key: "api_access",
+          type: "boolean",
+        },
+      },
+      plans: {
+        pro: {
+          entitlements: {
+            tokens: 100000,
+            apiAccess: true,
+          },
+        },
+      },
+    });
+
+    await applyOpenMeterBillingEvent(
+      {
+        type: "subscription.active",
+        provider: "stripe",
+        customerIdOrKey: "cus_123",
+        plan: "pro",
+      },
+      makeCtx(client),
+      {
+        catalog,
+      },
+    );
+
+    expect(client.customers.entitlements.create).toHaveBeenCalledTimes(2);
+    expect(client.customers.entitlements.create).toHaveBeenCalledWith(
+      "cus_123",
+      expect.objectContaining({
+        featureKey: "ai_tokens",
+        type: "metered",
+        amount: 100000,
+      }),
+    );
+    expect(client.customers.entitlements.create).toHaveBeenCalledWith(
+      "cus_123",
+      expect.objectContaining({
+        featureKey: "api_access",
+        type: "boolean",
+      }),
+    );
+  });
+
+  it("can mirror billing events without creating catalog entitlements", async () => {
+    const client = makeClient();
+    const catalog = defineBillingCatalog({
+      features: {
+        tokens: {
+          type: "metered",
+        },
+      },
+      plans: {
+        pro: {
+          entitlements: {
+            tokens: 100000,
+          },
+        },
+      },
+    });
+
+    await applyOpenMeterBillingEvent(
+      {
+        type: "subscription.active",
+        provider: "stripe",
+        customerIdOrKey: "cus_123",
+        plan: "pro",
+      },
+      makeCtx(client),
+      {
+        catalog,
+        entitlementMode: "none",
+      },
+    );
+
+    expect(client.events.ingest).toHaveBeenCalledOnce();
+    expect(client.customers.entitlements.create).not.toHaveBeenCalled();
+  });
+});
