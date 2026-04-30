@@ -34,6 +34,13 @@ import {
 
 export { OPENMETER_ERROR_CODES } from "./utils";
 export { getSchema, user as openmeterUserSchema } from "./schema";
+export {
+  defineBillingCatalog,
+  compileOpenMeterEntitlements,
+  compilePaymentCatalog,
+  createCatalogEntitlementMapper,
+  validateBillingCatalog,
+} from "./catalog";
 export type {
   JsonObject,
   OpenMeterClient,
