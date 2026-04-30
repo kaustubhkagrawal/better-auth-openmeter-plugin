@@ -1,6 +1,13 @@
 # better-auth-openmeter-plugin
 
-OpenMeter usage metering and entitlement helpers for Better Auth.
+[![npm version](https://img.shields.io/npm/v/better-auth-openmeter-plugin.svg)](https://www.npmjs.com/package/better-auth-openmeter-plugin)
+[![npm downloads](https://img.shields.io/npm/dm/better-auth-openmeter-plugin.svg)](https://www.npmjs.com/package/better-auth-openmeter-plugin)
+[![license](https://img.shields.io/npm/l/better-auth-openmeter-plugin.svg)](https://github.com/kaustubhkagrawal/better-auth-openmeter-plugin/blob/main/LICENSE)
+[![types](https://img.shields.io/npm/types/better-auth-openmeter-plugin.svg)](https://www.npmjs.com/package/better-auth-openmeter-plugin)
+
+Better Auth plugin for OpenMeter usage metering, entitlements, API key
+tracking, organization customers, React hooks, and billing provider bridges for
+Stripe, Polar, Razorpay, Creem, Dodo Payments, and Autumn.
 
 ## Install
 

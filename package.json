@@ -1,13 +1,17 @@
 {
   "name": "better-auth-openmeter-plugin",
-  "version": "0.2.0",
-  "description": "OpenMeter usage metering and entitlement helpers for Better Auth.",
+  "version": "0.2.1",
+  "description": "Better Auth plugin for OpenMeter usage metering, entitlements, API keys, organizations, and billing providers.",
   "type": "module",
   "license": "MIT",
   "author": "",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kaustubhkagrawal/better-auth-openmeter-plugin.git"
+  },
+  "homepage": "https://github.com/kaustubhkagrawal/better-auth-openmeter-plugin#readme",
+  "bugs": {
+    "url": "https://github.com/kaustubhkagrawal/better-auth-openmeter-plugin/issues"
   },
   "sideEffects": false,
   "files": [
@@ -76,6 +80,17 @@
     "openmeter",
     "usage-metering",
     "entitlements",
+    "usage-based-billing",
+    "metering",
+    "billing",
+    "api-keys",
+    "organizations",
+    "stripe",
+    "polar",
+    "razorpay",
+    "creem",
+    "dodo-payments",
+    "autumn",
     "typescript"
   ],
   "peerDependencies": {
