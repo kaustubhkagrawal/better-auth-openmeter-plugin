@@ -260,6 +260,7 @@ Stripe, Polar, Razorpay, Creem, Dodo, or Autumn the source of truth.
 
 ```ts
 import {
+  compileOpenMeterTopupGrant,
   compilePaymentCatalog,
   createCatalogEntitlementMapper,
   defineBillingCatalog,
@@ -285,6 +286,10 @@ export const catalog = defineBillingCatalog({
       key: "api_access",
       type: "boolean",
     },
+    prioritySupport: {
+      key: "priority_support",
+      type: "boolean",
+    },
   },
   plans: {
     pro: {
@@ -308,6 +313,42 @@ export const catalog = defineBillingCatalog({
       },
     },
   },
+  addons: {
+    prioritySupport: {
+      compatiblePlans: ["pro"],
+      entitlements: {
+        prioritySupport: true,
+      },
+      prices: {
+        monthly: {
+          amount: 1000,
+          currency: "USD",
+          interval: "month",
+        },
+      },
+    },
+  },
+  topups: {
+    tokenPack1m: {
+      feature: "aiTokens",
+      amount: 1_000_000,
+      compatiblePlans: ["pro"],
+      grant: {
+        priority: 1,
+        expiration: {
+          duration: "YEAR",
+          count: 1,
+        },
+      },
+      prices: {
+        oneTime: {
+          amount: 1000,
+          currency: "USD",
+          interval: "one_time",
+        },
+      },
+    },
+  },
 });
 
 openmeterBillingAdapter({
@@ -315,7 +356,25 @@ openmeterBillingAdapter({
 });
 
 const stripeSetup = compilePaymentCatalog(catalog, "stripe");
+const tokenGrant = compileOpenMeterTopupGrant(catalog, "tokenPack1m");
 ```
+
+The catalog now distinguishes three sellable shapes:
+
+- `plans`: recurring subscription definitions
+- `addons`: subscription extensions such as extra seats, feature upgrades, or setup fees
+- `topups`: one-time purchases that should become OpenMeter customer grants after payment succeeds
+
+Provider compilation keeps the app catalog as the source of truth and emits an
+explicit strategy per item:
+
+- Stripe: recurring add-ons compile as subscription items, one-time add-ons as invoice items, top-ups as one-time checkout charges
+- Razorpay: plans compile to subscription plans, add-ons map to upfront subscription add-ons, top-ups require a custom payment flow and are surfaced as compatibility warnings
+- Dodo Payments: plans and add-ons stay as subscription products/add-ons, top-ups compile as one-time checkout products
+- OpenMeter: plans and add-ons compile to entitlements, while top-ups compile to customer grants
+
+Use `compilePaymentCatalog(catalog, provider, { strict: true })` when CI should
+fail on provider-specific incompatibilities instead of returning warnings.
 
 For mature applications that already use managed plans/subscriptions elsewhere,
 keep the same catalog for validation and event metadata, but disable OpenMeter

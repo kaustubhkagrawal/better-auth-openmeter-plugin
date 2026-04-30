@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+  compileCatalogAddons,
   compileCatalogFeatures,
   compileCatalogPlans,
+  compileCatalogTopups,
+  compileOpenMeterAddonEntitlements,
   compileOpenMeterEntitlements,
+  compileOpenMeterTopupGrant,
   compilePaymentCatalog,
   createCatalogEntitlementMapper,
   defineBillingCatalog,
   validateBillingCatalog,
+  validateBillingCatalogProviderCompatibility,
 } from "../src/catalog";
 
 const catalog = defineBillingCatalog({
@@ -33,6 +38,10 @@ const catalog = defineBillingCatalog({
       key: "support_tier",
       type: "static",
     },
+    prioritySupport: {
+      key: "priority_support",
+      type: "boolean",
+    },
   },
   plans: {
     free: {
@@ -49,6 +58,7 @@ const catalog = defineBillingCatalog({
       description: "Pro plan",
       providerIds: {
         stripe: "prod_stripe_pro",
+        dodo: "prod_dodo_pro",
       },
       entitlements: {
         aiTokens: {
@@ -66,6 +76,7 @@ const catalog = defineBillingCatalog({
           interval: "month",
           providerIds: {
             stripe: "price_stripe_monthly",
+            dodo: "price_dodo_monthly",
           },
         },
         yearly: {
@@ -77,10 +88,78 @@ const catalog = defineBillingCatalog({
       },
     },
   },
+  addons: {
+    prioritySupport: {
+      key: "priority_support_addon",
+      name: "Priority Support",
+      description: "Support SLA and escalation",
+      compatiblePlans: ["pro"],
+      multiple: false,
+      entitlements: {
+        prioritySupport: true,
+      },
+      prices: {
+        monthly: {
+          amount: 1000,
+          currency: "USD",
+          interval: "month",
+          providerIds: {
+            stripe: "price_support_monthly",
+          },
+        },
+      },
+    },
+    onboarding: {
+      key: "onboarding",
+      name: "Onboarding Pack",
+      compatiblePlans: ["pro"],
+      multiple: false,
+      entitlements: {
+        supportTier: { config: "concierge" },
+      },
+      prices: {
+        setup: {
+          amount: 5000,
+          currency: "USD",
+          interval: "one_time",
+        },
+      },
+    },
+  },
+  topups: {
+    tokenPack1m: {
+      key: "token_pack_1m",
+      name: "1M Token Pack",
+      feature: "aiTokens",
+      amount: 1_000_000,
+      compatiblePlans: ["pro"],
+      grant: {
+        priority: 1,
+        expiration: {
+          duration: "YEAR",
+          count: 1,
+        },
+        maxRolloverAmount: 1_000_000,
+        metadata: {
+          source: "checkout",
+        },
+      },
+      prices: {
+        oneTime: {
+          amount: 1000,
+          currency: "USD",
+          interval: "one_time",
+          providerIds: {
+            stripe: "price_token_pack",
+          },
+        },
+      },
+    },
+  },
 });
 
 describe("billing catalog", () => {
-  it("defines and compiles catalog features and plans", () => {
+  it("defines and compiles catalog features, plans, addons, and topups", () => {
     expect(compileCatalogFeatures(catalog)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -100,9 +179,29 @@ describe("billing catalog", () => {
         }),
       ]),
     );
+
+    expect(compileCatalogAddons(catalog)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "prioritySupport",
+          key: "priority_support_addon",
+          name: "Priority Support",
+        }),
+      ]),
+    );
+
+    expect(compileCatalogTopups(catalog)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "tokenPack1m",
+          key: "token_pack_1m",
+          name: "1M Token Pack",
+        }),
+      ]),
+    );
   });
 
-  it("compiles plan entitlements to OpenMeter entitlement plans", () => {
+  it("compiles OpenMeter plan and addon entitlements plus topup grants", () => {
     expect(compileOpenMeterEntitlements(catalog, "pro")).toEqual([
       {
         featureKey: "ai_tokens",
@@ -133,6 +232,38 @@ describe("billing catalog", () => {
         },
       },
     ]);
+
+    expect(compileOpenMeterAddonEntitlements(catalog, "priority_support_addon")).toEqual([
+      {
+        featureKey: "priority_support",
+        type: "boolean",
+        metadata: {
+          catalogAddonId: "prioritySupport",
+          catalogFeatureId: "prioritySupport",
+          enabled: true,
+        },
+      },
+    ]);
+
+    expect(compileOpenMeterTopupGrant(catalog, "token_pack_1m")).toEqual({
+      topupId: "tokenPack1m",
+      topupKey: "token_pack_1m",
+      featureId: "aiTokens",
+      featureKey: "ai_tokens",
+      amount: 1_000_000,
+      priority: 1,
+      expiration: {
+        duration: "YEAR",
+        count: 1,
+      },
+      maxRolloverAmount: 1_000_000,
+      metadata: {
+        source: "checkout",
+        catalogTopupId: "tokenPack1m",
+        catalogTopupKey: "token_pack_1m",
+        catalogFeatureId: "aiTokens",
+      },
+    });
   });
 
   it("creates a billing adapter entitlement mapper from event.plan", () => {
@@ -147,12 +278,15 @@ describe("billing catalog", () => {
     ).toThrow('Unknown catalog plan "missing".');
   });
 
-  it("compiles payment provider product and price setup data", () => {
+  it("compiles Stripe setup data with explicit strategies", () => {
     expect(compilePaymentCatalog(catalog, "stripe")).toEqual({
       provider: "stripe",
+      warnings: [],
       products: expect.arrayContaining([
         {
           provider: "stripe",
+          kind: "plan",
+          strategy: "subscription_product",
           catalogPlanId: "pro",
           name: "Pro",
           description: "Pro plan",
@@ -162,10 +296,45 @@ describe("billing catalog", () => {
             catalogPlanKey: "pro",
           },
         },
+        {
+          provider: "stripe",
+          kind: "addon",
+          strategy: "subscription_item",
+          catalogAddonId: "prioritySupport",
+          name: "Priority Support",
+          description: "Support SLA and escalation",
+          productId: undefined,
+          compatiblePlanIds: ["pro"],
+          multiple: false,
+          quantity: undefined,
+          metadata: {
+            catalogAddonId: "prioritySupport",
+            catalogAddonKey: "priority_support_addon",
+          },
+        },
+        {
+          provider: "stripe",
+          kind: "topup",
+          strategy: "one_time_checkout",
+          catalogTopupId: "tokenPack1m",
+          name: "1M Token Pack",
+          description: undefined,
+          productId: undefined,
+          featureId: "aiTokens",
+          amount: 1_000_000,
+          compatiblePlanIds: ["pro"],
+          metadata: {
+            catalogTopupId: "tokenPack1m",
+            catalogTopupKey: "token_pack_1m",
+            catalogFeatureId: "aiTokens",
+          },
+        },
       ]),
       prices: expect.arrayContaining([
         {
           provider: "stripe",
+          kind: "plan",
+          strategy: "subscription_product",
           catalogPlanId: "pro",
           catalogPriceId: "monthly",
           lookupKey: "pro:monthly",
@@ -183,11 +352,119 @@ describe("billing catalog", () => {
           },
         },
         expect.objectContaining({
-          catalogPriceId: "yearly",
-          lookupKey: "pro-yearly",
+          kind: "addon",
+          strategy: "subscription_item",
+          catalogAddonId: "prioritySupport",
+          catalogPriceId: "monthly",
+          lookupKey: "priority_support_addon:monthly",
+          priceId: "price_support_monthly",
+        }),
+        expect.objectContaining({
+          kind: "addon",
+          strategy: "invoice_item",
+          catalogAddonId: "onboarding",
+          catalogPriceId: "setup",
+          lookupKey: "onboarding:setup",
+        }),
+        expect.objectContaining({
+          kind: "topup",
+          strategy: "one_time_checkout",
+          catalogTopupId: "tokenPack1m",
+          catalogPriceId: "oneTime",
+          lookupKey: "token_pack_1m:oneTime",
+          priceId: "price_token_pack",
         }),
       ]),
     });
+  });
+
+  it("emits provider compatibility warnings for Razorpay but still compiles", () => {
+    const compiled = compilePaymentCatalog(catalog, "razorpay");
+
+    expect(compiled.products).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "plan",
+          strategy: "subscription_plan",
+        }),
+        expect.objectContaining({
+          kind: "addon",
+          strategy: "subscription_addon",
+        }),
+        expect.objectContaining({
+          kind: "topup",
+          strategy: "manual_charge",
+        }),
+      ]),
+    );
+
+    expect(compiled.warnings).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("addons.prioritySupport.prices.monthly.interval"),
+        expect.stringContaining("topups.tokenPack1m"),
+      ]),
+    );
+
+    expect(() =>
+      compilePaymentCatalog(catalog, "razorpay", { strict: true }),
+    ).toThrow('Invalid billing catalog for provider "razorpay"');
+  });
+
+  it("reports provider-specific compatibility issues", () => {
+    const issues = validateBillingCatalogProviderCompatibility(
+      defineBillingCatalog({
+        features: {
+          aiTokens: {
+            type: "metered",
+            meter: "tokens",
+          },
+        },
+        meters: {
+          tokens: {
+            eventType: "ai.tokens",
+          },
+        },
+        plans: {
+          pro: {
+            entitlements: {
+              aiTokens: 100,
+            },
+            prices: {
+              yearly: {
+                amount: 12000,
+                currency: "USD",
+                interval: "year",
+              },
+            },
+          },
+        },
+        addons: {
+          monthlyBoost: {
+            entitlements: {
+              aiTokens: 1000,
+            },
+            compatiblePlans: ["pro"],
+            prices: {
+              monthly: {
+                amount: 1000,
+                currency: "USD",
+                interval: "month",
+              },
+            },
+          },
+        },
+        topups: {},
+      }),
+      "dodo",
+    );
+
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "addons.monthlyBoost.compatiblePlans",
+        }),
+      ]),
+    );
   });
 
   it("reports catalog validation issues without throwing", () => {
@@ -215,6 +492,19 @@ describe("billing catalog", () => {
           },
         },
       },
+      topups: {
+        badTopup: {
+          feature: "apiAccess",
+          amount: 100,
+          prices: {
+            monthly: {
+              amount: 999,
+              currency: "USD",
+              interval: "month",
+            },
+          },
+        },
+      },
     });
 
     expect(issues).toEqual(
@@ -233,6 +523,12 @@ describe("billing catalog", () => {
         }),
         expect.objectContaining({
           path: "plans.pro.prices.monthly.currency",
+        }),
+        expect.objectContaining({
+          path: "topups.badTopup.feature",
+        }),
+        expect.objectContaining({
+          path: "topups.badTopup.prices.monthly.interval",
         }),
       ]),
     );
