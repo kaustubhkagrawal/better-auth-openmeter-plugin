@@ -86,6 +86,7 @@ export type {
   OpenMeterClient,
   OpenMeterCustomer,
   OpenMeterCustomerProfile,
+  OpenMeterEntitlementGrant,
   OpenMeterOptions,
   OpenMeterUsageEvent,
   WithOpenMeterCustomerId,

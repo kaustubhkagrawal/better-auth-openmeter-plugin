@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  applyCatalogTopupGrant,
   applyOpenMeterBillingEvent,
   billingAdapter,
   openmeterBillingAdapter,
@@ -14,6 +15,7 @@ function makeClient() {
     customers: {
       entitlements: {
         create: vi.fn().mockResolvedValue({ id: "ent_123" }),
+        createGrant: vi.fn().mockResolvedValue({ id: "grant_123" }),
       },
     },
     portal: {},
@@ -228,5 +230,173 @@ describe("applyOpenMeterBillingEvent", () => {
 
     expect(client.events.ingest).toHaveBeenCalledOnce();
     expect(client.customers.entitlements.create).not.toHaveBeenCalled();
+  });
+
+  it("can apply a catalog topup grant and ingest an audit event", async () => {
+    const client = makeClient();
+    const onTopupGranted = vi.fn();
+    const catalog = defineBillingCatalog({
+      features: {
+        tokens: {
+          key: "ai_tokens",
+          type: "metered",
+        },
+      },
+      plans: {
+        pro: {
+          entitlements: {
+            tokens: 100000,
+          },
+        },
+      },
+      topups: {
+        tokenPack1m: {
+          key: "token_pack_1m",
+          feature: "tokens",
+          amount: 1_000_000,
+          grant: {
+            priority: 1,
+            expiration: {
+              duration: "year",
+              count: 1,
+            },
+            maxRolloverAmount: 1_000_000,
+            metadata: {
+              source: "catalog",
+              nested: {
+                mode: "catalog",
+              },
+            },
+          },
+          prices: {
+            oneTime: {
+              amount: 1000,
+              currency: "USD",
+              interval: "one_time",
+            },
+          },
+        },
+      },
+    });
+
+    const result = await applyCatalogTopupGrant(
+      {
+        customerIdOrKey: "cus_123",
+        subject: "org_123",
+        topup: "tokenPack1m",
+        provider: "stripe",
+        referenceId: "org_123",
+        paymentId: "pi_123",
+        metadata: {
+          source: "webhook",
+          checkoutSessionId: "cs_123",
+          nested: {
+            mode: "webhook",
+          },
+        },
+      },
+      makeCtx(client),
+      {
+        catalog,
+        onTopupGranted,
+      },
+    );
+
+    expect(client.customers.entitlements.createGrant).toHaveBeenCalledWith(
+      "cus_123",
+      "ai_tokens",
+      {
+        amount: 1_000_000,
+        priority: 1,
+        effectiveAt: expect.any(Date),
+        expiration: {
+          duration: "YEAR",
+          count: 1,
+        },
+        maxRolloverAmount: 1_000_000,
+        metadata: {
+          source: "webhook",
+          nested: JSON.stringify({ mode: "webhook" }),
+          catalogTopupId: "tokenPack1m",
+          catalogTopupKey: "token_pack_1m",
+          catalogFeatureId: "tokens",
+          checkoutSessionId: "cs_123",
+        },
+      },
+    );
+    expect(client.events.ingest).toHaveBeenCalledWith({
+      specversion: "1.0",
+      source: "better-auth",
+      type: "better-auth.billing.topup.applied",
+      subject: "org_123",
+      data: {
+        provider: "stripe",
+        referenceId: "org_123",
+        paymentId: "pi_123",
+        topupId: "tokenPack1m",
+        topupKey: "token_pack_1m",
+        featureKey: "ai_tokens",
+        amount: 1_000_000,
+        grantId: "grant_123",
+        metadata: {
+          source: "webhook",
+          nested: JSON.stringify({ mode: "webhook" }),
+          catalogTopupId: "tokenPack1m",
+          catalogTopupKey: "token_pack_1m",
+          catalogFeatureId: "tokens",
+          checkoutSessionId: "cs_123",
+        },
+      },
+    });
+    expect(onTopupGranted).toHaveBeenCalledOnce();
+    expect(result.compiledTopup.topupId).toBe("tokenPack1m");
+    expect(result.grant?.id).toBe("grant_123");
+  });
+
+  it("can apply a catalog topup grant without ingesting an audit event", async () => {
+    const client = makeClient();
+    const catalog = defineBillingCatalog({
+      features: {
+        tokens: {
+          key: "ai_tokens",
+          type: "metered",
+        },
+      },
+      plans: {
+        pro: {
+          entitlements: {
+            tokens: 100000,
+          },
+        },
+      },
+      topups: {
+        tokenPack1m: {
+          feature: "tokens",
+          amount: 1_000_000,
+          prices: {
+            oneTime: {
+              amount: 1000,
+              currency: "USD",
+              interval: "one_time",
+            },
+          },
+        },
+      },
+    });
+
+    await applyCatalogTopupGrant(
+      {
+        customerIdOrKey: "cus_123",
+        topup: "tokenPack1m",
+      },
+      makeCtx(client),
+      {
+        catalog,
+        ingestTopupEvents: false,
+      },
+    );
+
+    expect(client.customers.entitlements.createGrant).toHaveBeenCalledOnce();
+    expect(client.events.ingest).not.toHaveBeenCalled();
   });
 });

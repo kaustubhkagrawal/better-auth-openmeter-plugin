@@ -441,6 +441,7 @@ duplicating OpenMeter entitlement logic per provider.
 
 ```ts
 import {
+  applyCatalogTopupGrant,
   applyOpenMeterBillingEvent,
   openmeterBillingAdapter,
 } from "better-auth-openmeter-plugin/adapters/billing";
@@ -473,6 +474,31 @@ await applyOpenMeterBillingEvent(
   billingOptions,
 );
 ```
+
+To grant a catalog top-up after a one-time payment succeeds, use the runtime helper:
+
+```ts
+await applyCatalogTopupGrant(
+  {
+    customerIdOrKey: "org_123",
+    subject: "org_123",
+    provider: "stripe",
+    paymentId: "pi_123",
+    topup: "tokenPack1m",
+    metadata: {
+      checkoutSessionId: "cs_123",
+    },
+  },
+  ctx,
+  {
+    catalog,
+  },
+);
+```
+
+This compiles the top-up into an OpenMeter customer grant, creates it through
+`customers.entitlements.createGrant(...)`, and ingests
+`better-auth.billing.topup.applied` by default for auditability.
 
 This is the intended path for Stripe, Razorpay, Polar, and custom billing
 providers. Polar already has usage-metering features, so only bridge it when
