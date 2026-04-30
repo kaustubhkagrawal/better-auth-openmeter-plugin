@@ -1,7 +1,6 @@
 # better-auth-openmeter-plugin
 
 [![npm version](https://img.shields.io/npm/v/better-auth-openmeter-plugin.svg)](https://www.npmjs.com/package/better-auth-openmeter-plugin)
-[![npm downloads](https://img.shields.io/npm/dm/better-auth-openmeter-plugin.svg)](https://www.npmjs.com/package/better-auth-openmeter-plugin)
 [![license](https://img.shields.io/npm/l/better-auth-openmeter-plugin.svg)](https://github.com/kaustubhkagrawal/better-auth-openmeter-plugin/blob/main/LICENSE)
 [![types](https://img.shields.io/npm/types/better-auth-openmeter-plugin.svg)](https://www.npmjs.com/package/better-auth-openmeter-plugin)
 
