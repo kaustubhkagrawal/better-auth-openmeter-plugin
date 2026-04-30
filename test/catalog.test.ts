@@ -109,22 +109,6 @@ const catalog = defineBillingCatalog({
         },
       },
     },
-    onboarding: {
-      key: "onboarding",
-      name: "Onboarding Pack",
-      compatiblePlans: ["pro"],
-      multiple: false,
-      entitlements: {
-        supportTier: { config: "concierge" },
-      },
-      prices: {
-        setup: {
-          amount: 5000,
-          currency: "USD",
-          interval: "one_time",
-        },
-      },
-    },
   },
   topups: {
     tokenPack1m: {
@@ -132,7 +116,6 @@ const catalog = defineBillingCatalog({
       name: "1M Token Pack",
       feature: "aiTokens",
       amount: 1_000_000,
-      compatiblePlans: ["pro"],
       grant: {
         priority: 1,
         expiration: {
@@ -322,7 +305,7 @@ describe("billing catalog", () => {
           productId: undefined,
           featureId: "aiTokens",
           amount: 1_000_000,
-          compatiblePlanIds: ["pro"],
+          compatiblePlanIds: ["free", "pro"],
           metadata: {
             catalogTopupId: "tokenPack1m",
             catalogTopupKey: "token_pack_1m",
@@ -358,13 +341,6 @@ describe("billing catalog", () => {
           catalogPriceId: "monthly",
           lookupKey: "priority_support_addon:monthly",
           priceId: "price_support_monthly",
-        }),
-        expect.objectContaining({
-          kind: "addon",
-          strategy: "invoice_item",
-          catalogAddonId: "onboarding",
-          catalogPriceId: "setup",
-          lookupKey: "onboarding:setup",
         }),
         expect.objectContaining({
           kind: "topup",
@@ -443,7 +419,6 @@ describe("billing catalog", () => {
             entitlements: {
               aiTokens: 1000,
             },
-            compatiblePlans: ["pro"],
             prices: {
               monthly: {
                 amount: 1000,
@@ -489,7 +464,20 @@ describe("billing catalog", () => {
               amount: 20.5,
               currency: "US",
             },
+            setup: {
+              amount: 999,
+              currency: "USD",
+              interval: "one_time",
+            },
           },
+        },
+        empty: {
+          entitlements: {},
+        },
+      },
+      addons: {
+        emptyAddon: {
+          entitlements: {},
         },
       },
       topups: {
@@ -525,12 +513,42 @@ describe("billing catalog", () => {
           path: "plans.pro.prices.monthly.currency",
         }),
         expect.objectContaining({
+          path: "plans.pro.prices.setup.interval",
+        }),
+        expect.objectContaining({
+          path: "plans.empty.entitlements",
+        }),
+        expect.objectContaining({
+          path: "addons.emptyAddon.entitlements",
+        }),
+        expect.objectContaining({
           path: "topups.badTopup.feature",
         }),
         expect.objectContaining({
           path: "topups.badTopup.prices.monthly.interval",
         }),
       ]),
+    );
+  });
+
+  it("defaults omitted compatiblePlans to every catalog plan", () => {
+    const compiled = compilePaymentCatalog(catalog, "stripe");
+    const topupProduct = compiled.products.find(
+      (product) => product.kind === "topup" && product.catalogTopupId === "tokenPack1m",
+    );
+    const topupPrice = compiled.prices.find(
+      (price) => price.kind === "topup" && price.catalogTopupId === "tokenPack1m",
+    );
+
+    expect(topupProduct).toEqual(
+      expect.objectContaining({
+        compatiblePlanIds: ["free", "pro"],
+      }),
+    );
+    expect(topupPrice).toEqual(
+      expect.objectContaining({
+        compatiblePlanIds: ["free", "pro"],
+      }),
     );
   });
 

@@ -332,7 +332,6 @@ export const catalog = defineBillingCatalog({
     tokenPack1m: {
       feature: "aiTokens",
       amount: 1_000_000,
-      compatiblePlans: ["pro"],
       grant: {
         priority: 1,
         expiration: {
@@ -362,8 +361,16 @@ const tokenGrant = compileOpenMeterTopupGrant(catalog, "tokenPack1m");
 The catalog now distinguishes three sellable shapes:
 
 - `plans`: recurring subscription definitions
-- `addons`: subscription extensions such as extra seats, feature upgrades, or setup fees
-- `topups`: one-time purchases that should become OpenMeter customer grants after payment succeeds
+- `addons`: subscription extensions such as extra seats, feature upgrades, or recurring capacity
+- `topups`: one-time metered balance or capacity purchases that should become OpenMeter customer grants after payment succeeds
+
+`plans` are recurring-first by design. Plan prices cannot use `interval: "one_time"`.
+Generic one-time commerce such as onboarding, migration, or setup fees is out of
+scope for this v1 OpenMeter-oriented DSL. Use `topups` only when the purchase
+adds metered balance or capacity to an existing entitlement.
+
+When `compatiblePlans` is omitted on an add-on or top-up, the compiler treats it
+as compatible with every catalog plan.
 
 Provider compilation keeps the app catalog as the source of truth and emits an
 explicit strategy per item:
