@@ -1,5 +1,6 @@
 # better-auth-openmeter-plugin
 
+[![CI](https://github.com/kaustubhkagrawal/better-auth-openmeter-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/kaustubhkagrawal/better-auth-openmeter-plugin/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/better-auth-openmeter-plugin.svg)](https://www.npmjs.com/package/better-auth-openmeter-plugin)
 [![license](https://img.shields.io/npm/l/better-auth-openmeter-plugin.svg)](https://github.com/kaustubhkagrawal/better-auth-openmeter-plugin/blob/main/LICENSE)
 [![types](https://img.shields.io/npm/types/better-auth-openmeter-plugin.svg)](https://www.npmjs.com/package/better-auth-openmeter-plugin)
@@ -691,3 +692,12 @@ export function TokenButton({ authClient }: { authClient: any }) {
   );
 }
 ```
+
+## Development
+
+Pull requests run the `CI` workflow, which installs dependencies with `npm ci`,
+then runs typecheck, unit tests, build, and `npm pack --dry-run`.
+
+Publishing is handled by the manual `Publish` workflow. Configure an npm
+automation token as the `NPM_TOKEN` repository or environment secret, bump the
+package version, merge through a PR, then run the workflow from `main`.
