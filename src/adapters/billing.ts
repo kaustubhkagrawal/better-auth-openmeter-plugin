@@ -1,5 +1,17 @@
 import type { BetterAuthPlugin, GenericEndpointContext } from "better-auth";
-import type { JsonObject, OpenMeterUsageEvent } from "../types";
+import {
+  compileOpenMeterTopupGrant,
+  createCatalogEntitlementMapper,
+  type BillingCatalog,
+  type CatalogEntitlementMapperOptions,
+  type CompiledOpenMeterTopupGrant,
+} from "../catalog";
+import type {
+  JsonObject,
+  OpenMeterClient,
+  OpenMeterEntitlementGrant,
+  OpenMeterUsageEvent,
+} from "../types";
 import {
   assertOpenMeterPlugin,
   getOpenMeterClient,
@@ -58,6 +70,14 @@ export type OpenMeterBillingProvider = {
 export type OpenMeterBillingAdapterOptions = OpenMeterAdapterOptions & {
   provider?: OpenMeterBillingProvider | undefined;
   requireOpenMeterPlugin?: boolean | undefined;
+  catalog?: BillingCatalog | undefined;
+  catalogMapperOptions?: CatalogEntitlementMapperOptions | undefined;
+  /**
+   * Defaults to "openmeter". Set to "none" when another catalog/subscription
+   * system is the entitlement source of truth and billing events should only be
+   * mirrored or audited.
+   */
+  entitlementMode?: "openmeter" | "none" | undefined;
   /**
    * Defaults to true. When true, billing events are also ingested as usage
    * events for auditability.
@@ -82,6 +102,85 @@ export type OpenMeterBillingAdapterOptions = OpenMeterAdapterOptions & {
       ) => Promise<void> | void)
     | undefined;
 };
+
+export type OpenMeterCatalogTopupInput = {
+  customerIdOrKey: string;
+  topup: string;
+  subject?: string | undefined;
+  provider?: string | undefined;
+  referenceId?: string | undefined;
+  paymentId?: string | undefined;
+  effectiveAt?: string | Date | undefined;
+  metadata?: JsonObject | undefined;
+  annotations?: JsonObject | undefined;
+};
+
+export type OpenMeterTopupGrantCreateInput = Parameters<
+  OpenMeterClient["customers"]["entitlements"]["createGrant"]
+>[2];
+type OpenMeterTopupGrantExpiration = NonNullable<
+  OpenMeterTopupGrantCreateInput["expiration"]
+>;
+
+export type OpenMeterCatalogTopupResult = {
+  input: OpenMeterCatalogTopupInput;
+  compiledTopup: CompiledOpenMeterTopupGrant;
+  grantInput: OpenMeterTopupGrantCreateInput;
+  grant: OpenMeterEntitlementGrant;
+};
+
+export type OpenMeterCatalogTopupOptions = OpenMeterAdapterOptions & {
+  catalog: BillingCatalog;
+  /**
+   * Defaults to true. When true, top-up grants are also ingested as usage
+   * events for auditability.
+   */
+  ingestTopupEvents?: boolean | undefined;
+  buildEvent?:
+    | ((
+        result: OpenMeterCatalogTopupResult,
+        ctx: GenericEndpointContext,
+      ) => OpenMeterUsageEvent | Promise<OpenMeterUsageEvent>)
+    | undefined;
+  onTopupGranted?:
+    | ((
+        result: OpenMeterCatalogTopupResult,
+        ctx: GenericEndpointContext,
+      ) => Promise<void> | void)
+    | undefined;
+};
+
+function toOpenMeterMetadata(
+  metadata?: JsonObject | undefined,
+): OpenMeterTopupGrantCreateInput["metadata"] {
+  if (!metadata) return undefined;
+
+  const entries = Object.entries(metadata).flatMap(([key, value]) => {
+    if (value === undefined) return [];
+    if (typeof value === "string") return [[key, value] as const];
+    return [[key, JSON.stringify(value)] as const];
+  });
+
+  return entries.length ? Object.fromEntries(entries) : undefined;
+}
+
+function normalizeGrantExpiration(
+  expiration?: CompiledOpenMeterTopupGrant["expiration"] | undefined,
+): OpenMeterTopupGrantCreateInput["expiration"] {
+  if (!expiration) return undefined;
+  return {
+    duration: expiration.duration.toUpperCase() as OpenMeterTopupGrantExpiration["duration"],
+    count: expiration.count ?? 1,
+  };
+}
+
+function resolveEffectiveAt(value?: string | Date | undefined) {
+  const effectiveAt = value ? new Date(value) : new Date();
+  if (Number.isNaN(effectiveAt.valueOf())) {
+    throw new Error('Invalid top-up effectiveAt; expected a valid Date or ISO timestamp.');
+  }
+  return effectiveAt;
+}
 
 export async function applyOpenMeterBillingEvent(
   event: OpenMeterBillingEvent,
@@ -113,7 +212,16 @@ export async function applyOpenMeterBillingEvent(
     await client.events.ingest(usageEvent as never);
   }
 
-  const entitlements = await options.mapPlanToEntitlements?.(event, ctx);
+  const mapPlanToEntitlements =
+    options.mapPlanToEntitlements ??
+    (options.catalog && options.entitlementMode !== "none"
+      ? createCatalogEntitlementMapper(
+          options.catalog,
+          options.catalogMapperOptions,
+        )
+      : undefined);
+
+  const entitlements = await mapPlanToEntitlements?.(event, ctx);
   if (entitlements?.length) {
     for (const entitlement of entitlements) {
       await client.customers.entitlements.create(
@@ -124,6 +232,74 @@ export async function applyOpenMeterBillingEvent(
   }
 
   await options.onBillingEvent?.(event, ctx);
+}
+
+export async function applyCatalogTopupGrant(
+  input: OpenMeterCatalogTopupInput,
+  ctx: GenericEndpointContext,
+  options: OpenMeterCatalogTopupOptions,
+) {
+  const client = getOpenMeterClient(ctx, options);
+  const compiledTopup = compileOpenMeterTopupGrant(options.catalog, input.topup);
+  const expiration = normalizeGrantExpiration(compiledTopup.expiration);
+  const metadata = toOpenMeterMetadata({
+    ...compiledTopup.metadata,
+    ...input.metadata,
+  });
+  const grantInput: OpenMeterTopupGrantCreateInput = {
+    amount: compiledTopup.amount,
+    effectiveAt: resolveEffectiveAt(input.effectiveAt),
+    ...(compiledTopup.priority !== undefined
+      ? { priority: compiledTopup.priority }
+      : {}),
+    ...(expiration ? { expiration } : {}),
+    ...(compiledTopup.maxRolloverAmount !== undefined
+      ? { maxRolloverAmount: compiledTopup.maxRolloverAmount }
+      : {}),
+    ...(metadata ? { metadata } : {}),
+    ...(input.annotations ? { annotations: input.annotations } : {}),
+  };
+
+  const grant = await client.customers.entitlements.createGrant(
+    input.customerIdOrKey,
+    compiledTopup.featureKey,
+    grantInput,
+  );
+
+  const result: OpenMeterCatalogTopupResult = {
+    input,
+    compiledTopup,
+    grantInput,
+    grant,
+  };
+
+  if (options.ingestTopupEvents !== false) {
+    const usageEvent = options.buildEvent
+      ? await options.buildEvent(result, ctx)
+      : withAdapterDefaults(
+          {
+            type: "better-auth.billing.topup.applied",
+            subject: input.subject ?? input.customerIdOrKey,
+            data: {
+              provider: input.provider,
+              referenceId: input.referenceId,
+              paymentId: input.paymentId,
+              topupId: compiledTopup.topupId,
+              topupKey: compiledTopup.topupKey,
+              featureKey: compiledTopup.featureKey,
+              amount: compiledTopup.amount,
+              grantId: grant?.id,
+              metadata: grantInput.metadata,
+            },
+          },
+          options,
+        );
+
+    await client.events.ingest(usageEvent as never);
+  }
+
+  await options.onTopupGranted?.(result, ctx);
+  return result;
 }
 
 export const openmeterBillingAdapter = (
@@ -147,4 +323,3 @@ export const openmeterBillingAdapter = (
 };
 
 export const billingAdapter = openmeterBillingAdapter;
-

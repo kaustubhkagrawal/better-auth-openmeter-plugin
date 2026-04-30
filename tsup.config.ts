@@ -5,6 +5,7 @@ export default defineConfig({
     "src/index.ts",
     "src/client.ts",
     "src/react.ts",
+    "src/catalog/index.ts",
     "src/adapters/index.ts",
     "src/adapters/api-key.ts",
     "src/adapters/billing.ts",

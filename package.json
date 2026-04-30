@@ -1,6 +1,6 @@
 {
   "name": "better-auth-openmeter-plugin",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Better Auth plugin for OpenMeter usage metering, entitlements, API keys, organizations, and billing providers.",
   "type": "module",
   "license": "MIT",
@@ -29,6 +29,10 @@
     "./react": {
       "types": "./dist/react.d.ts",
       "import": "./dist/react.js"
+    },
+    "./catalog": {
+      "types": "./dist/catalog/index.d.ts",
+      "import": "./dist/catalog/index.js"
     },
     "./adapters": {
       "types": "./dist/adapters/index.d.ts",
