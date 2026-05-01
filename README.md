@@ -9,11 +9,29 @@ Better Auth plugin for OpenMeter usage metering, entitlements, API key
 tracking, organization customers, React hooks, and billing provider bridges for
 Stripe, Polar, Razorpay, Creem, Dodo Payments, and Autumn.
 
+## Adoption Modes
+
+Use this package in one of two ways:
+
+- **Primary runtime integration** for greenfield Better Auth apps that want this
+  package to own OpenMeter customer sync, billing event mirroring, entitlements,
+  and top-up grant helpers.
+- **Catalog/helper layer** for mature apps that already have an OpenMeter
+  control plane. In that mode, keep your existing provisioning/runtime logic and
+  use this package for catalog definition, provider compilation, and audit-only
+  billing integration.
+
+If your app already owns org-scoped subscriptions, grant issuance, or request
+time accounting, prefer `catalog` plus `entitlementMode: "none"` instead of
+trying to replace that runtime with this plugin wholesale.
+
 ## Install
 
 ```sh
 npm install better-auth-openmeter-plugin @openmeter/sdk
 ```
+
+The package supports `better-auth` and `@better-auth/core` `^1.6.3`.
 
 ## Server Setup
 
