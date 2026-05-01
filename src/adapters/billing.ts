@@ -109,6 +109,11 @@ export type OpenMeterCatalogTopupInput = {
   subject?: string | undefined;
   provider?: string | undefined;
   referenceId?: string | undefined;
+  /**
+   * Stable key for de-duplicating grant creation across webhook retries.
+   * Defaults to `paymentId` when omitted.
+   */
+  idempotencyKey?: string | undefined;
   paymentId?: string | undefined;
   effectiveAt?: string | Date | undefined;
   metadata?: JsonObject | undefined;
@@ -127,10 +132,22 @@ export type OpenMeterCatalogTopupResult = {
   compiledTopup: CompiledOpenMeterTopupGrant;
   grantInput: OpenMeterTopupGrantCreateInput;
   grant: OpenMeterEntitlementGrant;
+  /**
+   * True when this call created a new OpenMeter grant. False when an existing
+   * grant was found by metadata idempotency lookup.
+   */
+  created: boolean;
+  idempotencyKey?: string | undefined;
 };
 
 export type OpenMeterCatalogTopupOptions = OpenMeterAdapterOptions & {
   catalog: BillingCatalog;
+  /**
+   * Defaults to "metadata". When `input.idempotencyKey` or `input.paymentId`
+   * exists, the helper checks existing OpenMeter grants for matching metadata
+   * before creating a new grant. Set to "none" for app-owned idempotency only.
+   */
+  idempotency?: "metadata" | "none" | undefined;
   /**
    * Defaults to true. When true, top-up grants are also ingested as usage
    * events for auditability.
@@ -180,6 +197,32 @@ function resolveEffectiveAt(value?: string | Date | undefined) {
     throw new Error('Invalid top-up effectiveAt; expected a valid Date or ISO timestamp.');
   }
   return effectiveAt;
+}
+
+type OpenMeterTopupGrantList = {
+  items?: Array<NonNullable<OpenMeterEntitlementGrant> & {
+    metadata?: Record<string, string> | null | undefined;
+  }>;
+};
+
+function resolveTopupIdempotencyKey(input: OpenMeterCatalogTopupInput) {
+  return input.idempotencyKey ?? input.paymentId;
+}
+
+async function findExistingTopupGrant(
+  client: OpenMeterClient,
+  customerIdOrKey: string,
+  featureKey: string,
+  idempotencyKey: string,
+) {
+  const grants = (await client.customers.entitlements.listGrants(
+    customerIdOrKey,
+    featureKey,
+  )) as OpenMeterTopupGrantList | undefined;
+
+  return grants?.items?.find((grant) => {
+    return grant.metadata?.idempotencyKey === idempotencyKey;
+  }) as OpenMeterEntitlementGrant;
 }
 
 export async function applyOpenMeterBillingEvent(
@@ -242,9 +285,14 @@ export async function applyCatalogTopupGrant(
   const client = getOpenMeterClient(ctx, options);
   const compiledTopup = compileOpenMeterTopupGrant(options.catalog, input.topup);
   const expiration = normalizeGrantExpiration(compiledTopup.expiration);
+  const idempotencyKey = resolveTopupIdempotencyKey(input);
   const metadata = toOpenMeterMetadata({
     ...compiledTopup.metadata,
     ...input.metadata,
+    provider: input.provider,
+    referenceId: input.referenceId,
+    paymentId: input.paymentId,
+    idempotencyKey,
   });
   const grantInput: OpenMeterTopupGrantCreateInput = {
     amount: compiledTopup.amount,
@@ -260,17 +308,31 @@ export async function applyCatalogTopupGrant(
     ...(input.annotations ? { annotations: input.annotations } : {}),
   };
 
-  const grant = await client.customers.entitlements.createGrant(
-    input.customerIdOrKey,
-    compiledTopup.featureKey,
-    grantInput,
-  );
+  const existingGrant =
+    idempotencyKey && options.idempotency !== "none"
+      ? await findExistingTopupGrant(
+          client,
+          input.customerIdOrKey,
+          compiledTopup.featureKey,
+          idempotencyKey,
+        )
+      : undefined;
+
+  const grant =
+    existingGrant ??
+    (await client.customers.entitlements.createGrant(
+      input.customerIdOrKey,
+      compiledTopup.featureKey,
+      grantInput,
+    ));
 
   const result: OpenMeterCatalogTopupResult = {
     input,
     compiledTopup,
     grantInput,
     grant,
+    created: !existingGrant,
+    idempotencyKey,
   };
 
   if (options.ingestTopupEvents !== false) {
@@ -278,6 +340,11 @@ export async function applyCatalogTopupGrant(
       ? await options.buildEvent(result, ctx)
       : withAdapterDefaults(
           {
+            ...(idempotencyKey
+              ? {
+                  id: `topup:${input.customerIdOrKey}:${compiledTopup.featureKey}:${idempotencyKey}`,
+                }
+              : {}),
             type: "better-auth.billing.topup.applied",
             subject: input.subject ?? input.customerIdOrKey,
             data: {
@@ -289,6 +356,9 @@ export async function applyCatalogTopupGrant(
               featureKey: compiledTopup.featureKey,
               amount: compiledTopup.amount,
               grantId: grant?.id,
+              created: result.created,
+              deduped: !result.created,
+              idempotencyKey,
               metadata: grantInput.metadata,
             },
           },

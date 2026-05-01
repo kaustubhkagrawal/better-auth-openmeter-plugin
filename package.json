@@ -1,6 +1,6 @@
 {
   "name": "better-auth-openmeter-plugin",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Better Auth plugin for OpenMeter usage metering, entitlements, API keys, organizations, and billing providers.",
   "type": "module",
   "license": "MIT",

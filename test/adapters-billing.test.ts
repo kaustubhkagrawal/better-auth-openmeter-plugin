@@ -15,6 +15,7 @@ function makeClient() {
     customers: {
       entitlements: {
         create: vi.fn().mockResolvedValue({ id: "ent_123" }),
+        listGrants: vi.fn().mockResolvedValue({ items: [] }),
         createGrant: vi.fn().mockResolvedValue({ id: "grant_123" }),
       },
     },
@@ -321,12 +322,17 @@ describe("applyOpenMeterBillingEvent", () => {
           catalogTopupKey: "token_pack_1m",
           catalogFeatureId: "tokens",
           checkoutSessionId: "cs_123",
+          provider: "stripe",
+          referenceId: "org_123",
+          paymentId: "pi_123",
+          idempotencyKey: "pi_123",
         },
       },
     );
     expect(client.events.ingest).toHaveBeenCalledWith({
       specversion: "1.0",
       source: "better-auth",
+      id: "topup:cus_123:ai_tokens:pi_123",
       type: "better-auth.billing.topup.applied",
       subject: "org_123",
       data: {
@@ -338,6 +344,9 @@ describe("applyOpenMeterBillingEvent", () => {
         featureKey: "ai_tokens",
         amount: 1_000_000,
         grantId: "grant_123",
+        created: true,
+        deduped: false,
+        idempotencyKey: "pi_123",
         metadata: {
           source: "webhook",
           nested: JSON.stringify({ mode: "webhook" }),
@@ -345,12 +354,143 @@ describe("applyOpenMeterBillingEvent", () => {
           catalogTopupKey: "token_pack_1m",
           catalogFeatureId: "tokens",
           checkoutSessionId: "cs_123",
+          provider: "stripe",
+          referenceId: "org_123",
+          paymentId: "pi_123",
+          idempotencyKey: "pi_123",
         },
       },
     });
     expect(onTopupGranted).toHaveBeenCalledOnce();
     expect(result.compiledTopup.topupId).toBe("tokenPack1m");
     expect(result.grant?.id).toBe("grant_123");
+    expect(result.created).toBe(true);
+    expect(result.idempotencyKey).toBe("pi_123");
+  });
+
+  it("deduplicates catalog topup grants by idempotency metadata", async () => {
+    const client = makeClient();
+    client.customers.entitlements.listGrants.mockResolvedValueOnce({
+      items: [
+        {
+          id: "grant_existing",
+          metadata: {
+            idempotencyKey: "payment_123",
+          },
+        },
+      ],
+    });
+    const catalog = defineBillingCatalog({
+      features: {
+        tokens: {
+          key: "ai_tokens",
+          type: "metered",
+        },
+      },
+      plans: {
+        pro: {
+          entitlements: {
+            tokens: 100000,
+          },
+        },
+      },
+      topups: {
+        tokenPack1m: {
+          feature: "tokens",
+          amount: 1_000_000,
+          prices: {
+            oneTime: {
+              amount: 1000,
+              currency: "USD",
+              interval: "one_time",
+            },
+          },
+        },
+      },
+    });
+
+    const result = await applyCatalogTopupGrant(
+      {
+        customerIdOrKey: "cus_123",
+        topup: "tokenPack1m",
+        idempotencyKey: "payment_123",
+        paymentId: "pi_123",
+      },
+      makeCtx(client),
+      {
+        catalog,
+      },
+    );
+
+    expect(client.customers.entitlements.listGrants).toHaveBeenCalledWith(
+      "cus_123",
+      "ai_tokens",
+    );
+    expect(client.customers.entitlements.createGrant).not.toHaveBeenCalled();
+    expect(result.grant?.id).toBe("grant_existing");
+    expect(result.created).toBe(false);
+    expect(result.idempotencyKey).toBe("payment_123");
+    expect(client.events.ingest).toHaveBeenCalledWith({
+      specversion: "1.0",
+      source: "better-auth",
+      id: "topup:cus_123:ai_tokens:payment_123",
+      type: "better-auth.billing.topup.applied",
+      subject: "cus_123",
+      data: expect.objectContaining({
+        grantId: "grant_existing",
+        created: false,
+        deduped: true,
+        idempotencyKey: "payment_123",
+      }),
+    });
+  });
+
+  it("can disable metadata idempotency for app-owned ledgers", async () => {
+    const client = makeClient();
+    const catalog = defineBillingCatalog({
+      features: {
+        tokens: {
+          key: "ai_tokens",
+          type: "metered",
+        },
+      },
+      plans: {
+        pro: {
+          entitlements: {
+            tokens: 100000,
+          },
+        },
+      },
+      topups: {
+        tokenPack1m: {
+          feature: "tokens",
+          amount: 1_000_000,
+          prices: {
+            oneTime: {
+              amount: 1000,
+              currency: "USD",
+              interval: "one_time",
+            },
+          },
+        },
+      },
+    });
+
+    await applyCatalogTopupGrant(
+      {
+        customerIdOrKey: "cus_123",
+        topup: "tokenPack1m",
+        paymentId: "pi_123",
+      },
+      makeCtx(client),
+      {
+        catalog,
+        idempotency: "none",
+      },
+    );
+
+    expect(client.customers.entitlements.listGrants).not.toHaveBeenCalled();
+    expect(client.customers.entitlements.createGrant).toHaveBeenCalledOnce();
   });
 
   it("can apply a catalog topup grant without ingesting an audit event", async () => {

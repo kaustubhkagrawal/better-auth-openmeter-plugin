@@ -501,6 +501,7 @@ await applyCatalogTopupGrant(
     customerIdOrKey: "org_123",
     subject: "org_123",
     provider: "stripe",
+    idempotencyKey: "checkout:cs_123",
     paymentId: "pi_123",
     topup: "tokenPack1m",
     metadata: {
@@ -517,6 +518,16 @@ await applyCatalogTopupGrant(
 This compiles the top-up into an OpenMeter customer grant, creates it through
 `customers.entitlements.createGrant(...)`, and ingests
 `better-auth.billing.topup.applied` by default for auditability.
+
+Top-up grants use metadata idempotency by default when `idempotencyKey` or
+`paymentId` is provided. The helper checks existing grants on the same customer
+and feature before creating a new grant, stores the key in grant metadata, and
+returns `created: false` when a retry maps to an existing grant. The audit event
+also uses a stable CloudEvents `id` so OpenMeter can deduplicate retried audit
+ingestion. For production webhooks, still keep an app-owned payment ledger with
+a unique payment/event key; the OpenMeter lookup is a convenience guard, not a
+replacement for race-safe payment reconciliation. Set `idempotency: "none"` if
+your ledger owns all deduplication.
 
 This is the intended path for Stripe, Razorpay, Polar, and custom billing
 providers. Polar already has usage-metering features, so only bridge it when
