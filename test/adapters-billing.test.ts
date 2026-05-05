@@ -425,6 +425,12 @@ describe("applyOpenMeterBillingEvent", () => {
     expect(client.customers.entitlements.listGrants).toHaveBeenCalledWith(
       "cus_123",
       "ai_tokens",
+      {
+        query: {
+          page: 1,
+          pageSize: 1000,
+        },
+      },
     );
     expect(client.customers.entitlements.createGrant).not.toHaveBeenCalled();
     expect(result.grant?.id).toBe("grant_existing");
@@ -443,6 +449,103 @@ describe("applyOpenMeterBillingEvent", () => {
         idempotencyKey: "payment_123",
       }),
     });
+  });
+
+  it("pages through catalog topup grant idempotency lookups", async () => {
+    const client = makeClient();
+    client.customers.entitlements.listGrants
+      .mockResolvedValueOnce({
+        totalCount: 1001,
+        page: 1,
+        pageSize: 1000,
+        items: [
+          {
+            id: "grant_first_page",
+            metadata: {
+              idempotencyKey: "other_payment",
+            },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        totalCount: 1001,
+        page: 2,
+        pageSize: 1000,
+        items: [
+          {
+            id: "grant_later_page",
+            metadata: {
+              idempotencyKey: "payment_123",
+            },
+          },
+        ],
+      });
+    const catalog = defineBillingCatalog({
+      features: {
+        tokens: {
+          key: "ai_tokens",
+          type: "metered",
+        },
+      },
+      plans: {
+        pro: {
+          entitlements: {
+            tokens: 100000,
+          },
+        },
+      },
+      topups: {
+        tokenPack1m: {
+          feature: "tokens",
+          amount: 1_000_000,
+          prices: {
+            oneTime: {
+              amount: 1000,
+              currency: "USD",
+              interval: "one_time",
+            },
+          },
+        },
+      },
+    });
+
+    const result = await applyCatalogTopupGrant(
+      {
+        customerIdOrKey: "cus_123",
+        topup: "tokenPack1m",
+        idempotencyKey: "payment_123",
+      },
+      makeCtx(client),
+      {
+        catalog,
+      },
+    );
+
+    expect(client.customers.entitlements.listGrants).toHaveBeenNthCalledWith(
+      1,
+      "cus_123",
+      "ai_tokens",
+      {
+        query: {
+          page: 1,
+          pageSize: 1000,
+        },
+      },
+    );
+    expect(client.customers.entitlements.listGrants).toHaveBeenNthCalledWith(
+      2,
+      "cus_123",
+      "ai_tokens",
+      {
+        query: {
+          page: 2,
+          pageSize: 1000,
+        },
+      },
+    );
+    expect(client.customers.entitlements.createGrant).not.toHaveBeenCalled();
+    expect(result.grant?.id).toBe("grant_later_page");
+    expect(result.created).toBe(false);
   });
 
   it("can disable metadata idempotency for app-owned ledgers", async () => {

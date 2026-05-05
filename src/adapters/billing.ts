@@ -200,10 +200,15 @@ function resolveEffectiveAt(value?: string | Date | undefined) {
 }
 
 type OpenMeterTopupGrantList = {
+  totalCount?: number | undefined;
+  page?: number | undefined;
+  pageSize?: number | undefined;
   items?: Array<NonNullable<OpenMeterEntitlementGrant> & {
     metadata?: Record<string, string> | null | undefined;
   }>;
 };
+
+const TOPUP_GRANT_LOOKUP_PAGE_SIZE = 1000;
 
 function resolveTopupIdempotencyKey(input: OpenMeterCatalogTopupInput) {
   return input.idempotencyKey ?? input.paymentId;
@@ -215,14 +220,39 @@ async function findExistingTopupGrant(
   featureKey: string,
   idempotencyKey: string,
 ) {
-  const grants = (await client.customers.entitlements.listGrants(
-    customerIdOrKey,
-    featureKey,
-  )) as OpenMeterTopupGrantList | undefined;
+  let page = 1;
 
-  return grants?.items?.find((grant) => {
-    return grant.metadata?.idempotencyKey === idempotencyKey;
-  }) as OpenMeterEntitlementGrant;
+  while (true) {
+    const grants = (await client.customers.entitlements.listGrants(
+      customerIdOrKey,
+      featureKey,
+      {
+        query: {
+          page,
+          pageSize: TOPUP_GRANT_LOOKUP_PAGE_SIZE,
+        },
+      },
+    )) as OpenMeterTopupGrantList | undefined;
+
+    const items = grants?.items ?? [];
+    const found = items.find((grant) => {
+      return grant.metadata?.idempotencyKey === idempotencyKey;
+    });
+
+    if (found) return found as OpenMeterEntitlementGrant;
+
+    const currentPage = grants?.page ?? page;
+    const pageSize = grants?.pageSize ?? TOPUP_GRANT_LOOKUP_PAGE_SIZE;
+    const totalCount = grants?.totalCount;
+
+    if (typeof totalCount === "number") {
+      if (currentPage * pageSize >= totalCount) return undefined;
+    } else if (items.length < pageSize) {
+      return undefined;
+    }
+
+    page = currentPage + 1;
+  }
 }
 
 export async function applyOpenMeterBillingEvent(
